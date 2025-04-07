@@ -18,7 +18,7 @@ ORS_API_KEY = st.secrets["ORS_API_KEY"]
 
 # Configure Gemini model
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-pro")
+model = genai.GenerativeModel("gemini-2.0-flash")
 
 st.set_page_config(page_title="Activity Suggester", layout="centered")
 st.title("🎯 Activity Suggester App")
