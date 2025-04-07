@@ -67,10 +67,38 @@ def fetch_place_image(place, gmaps_client):
     return None
 
 # Choose one place randomly
-def choose_place(places):
+def choose_place(user, places, model):
+    import streamlit as st
+
     if not places:
-        return None
-    return random.choice(places)
+        st.warning("No places found to choose from.")
+        return None, "We couldn't find any interesting places nearby."
+
+    # Create a prompt with summaries of the place options
+    place_names = [place["name"] for place in places[:5]]  # Take top 5 for brevity
+    prompt = f"""
+You're a helpful assistant helping a user decide what to do next.
+
+User preferences:
+- Weather: {user.get("weather")}
+- Time: {user.get("current_time")}
+- Interests: {', '.join(user.get("interests", []))}
+- Free hours: {user.get("free_hours")}
+
+Here are some options nearby:
+{', '.join(place_names)}
+
+Based on this context, choose the best one and explain why.
+"""
+
+    try:
+        response = model.generate_content(prompt)
+        description = response.text.strip()
+        return places[0], description  # Return first place as selected
+    except Exception as e:
+        st.error(f"Error generating place suggestion: {e}")
+        return None, "Sorry, we had trouble generating a suggestion."
+
 
 # Generate detailed suggestion using LLM
 def get_detailed_suggestion(user, model, last_short_response, top_interest):
