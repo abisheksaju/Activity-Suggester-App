@@ -4,7 +4,7 @@ import pandas as pd
 import openrouteservice
 import googlemaps
 import requests
-from IPython.display import Markdown
+import streamlit as st
 
 # Set up clients
 def init_clients(openroute_api_key, google_maps_api_key):
@@ -74,5 +74,5 @@ Now the user has clicked 'Know More'.
 Please give a more detailed, engaging, and informative version of the recommendation above. Include 2–3 paragraphs at most. Add why it’s a good fit based on the context, what to expect there, and optionally a fun tip.
 """
     response = model.generate_content(prompt)
-    display(Markdown(f"### Here's more about your activity:\n\n{response.text}"))
+    st.markdown(f"### Here's more about your activity:\n\n{response.text}")
     return response.text
