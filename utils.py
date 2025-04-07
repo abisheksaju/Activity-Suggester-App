@@ -31,14 +31,32 @@ def get_synthetic_user():
     }
 
 # Fetch places using Google Maps API
-def fetch_places(location, keyword, gmaps_client, radius=3000):
+def fetch_places(user, top_interest, GOOGLE_MAPS_API_KEY):
+    import googlemaps
+    import streamlit as st
+
+    location = user.get("location", {})
+    st.write("DEBUG: location =", location)  # helpful for debugging
+
+    if not location or "lat" not in location or "lon" not in location:
+        st.error("Location data is missing or incomplete.")
+        return []
+
     lat, lon = location["lat"], location["lon"]
-    places = gmaps_client.places_nearby(
-        location=(lat, lon),
-        keyword=keyword,
-        radius=radius
-    )
-    return places.get("results", [])
+    gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
+
+    try:
+        places_result = gmaps.places_nearby(
+            location=(lat, lon),
+            radius=5000,
+            keyword=top_interest
+        )
+        places = places_result.get("results", [])
+        return places
+    except Exception as e:
+        st.error(f"Error fetching places: {e}")
+        return []
+
 
 # Fetch image for a place (if available)
 def fetch_place_image(place, gmaps_client):
