@@ -11,7 +11,9 @@ from utils import (
     fetch_place_image,
     choose_place,
     get_detailed_suggestion,
-    init_clients
+    init_clients,
+    update_preferences_from_feedback,
+    get_user_preferences_db
 )
 
 st.set_page_config(page_title="Activity Suggester", layout="centered")
@@ -29,6 +31,12 @@ st.markdown("""
     .stButton button {
         width: 100%;
         border-radius: 20px;
+    }
+    .feedback-history {
+        margin-top: 30px;
+        padding: 10px;
+        background-color: #f5f5f5;
+        border-radius: 5px;
     }
     </style>
     <div class="custom-title">My Daily Activity Planner</div>
@@ -92,13 +100,15 @@ if "recommendation_shown" not in st.session_state or not st.session_state.recomm
         
         # Indoor flow
         if decision == "indoor":
-            # Pass user feedback to the LLM if available
             response = model.generate_content(build_llm_prompt_indoor(user, top_interest, st.session_state.user_feedback))
-            st.session_state.last_short_response = response.text.strip()
+            activity_description = response.text.strip()
+            st.session_state.last_short_response = activity_description
             st.session_state.recommendation_data = {
                 "type": "indoor",
-                "description": response.text.strip(),
-                "image_url": None
+                "name": f"Indoor {top_interest} Activity",
+                "description": activity_description,
+                "image_url": None,
+                "activity_type": top_interest
             }
         # Outdoor flow
         else:
@@ -112,18 +122,23 @@ if "recommendation_shown" not in st.session_state or not st.session_state.recomm
                 st.session_state.recommendation_data = {
                     "type": "outdoor",
                     "place": selected_place,
+                    "name": selected_place.get("name", "Unknown place"),
                     "description": description,
-                    "image_url": image_url
+                    "image_url": image_url,
+                    "activity_type": top_interest
                 }
                 st.session_state.last_short_response = description
             else:
                 # Fallback to indoor if no outdoor places found
                 response = model.generate_content(build_llm_prompt_indoor(user, top_interest, st.session_state.user_feedback))
-                st.session_state.last_short_response = response.text.strip()
+                activity_description = response.text.strip()
+                st.session_state.last_short_response = activity_description
                 st.session_state.recommendation_data = {
                     "type": "indoor",
-                    "description": response.text.strip(),
-                    "image_url": None
+                    "name": f"Indoor {top_interest} Activity",
+                    "description": activity_description,
+                    "image_url": None,
+                    "activity_type": top_interest
                 }
         
         # Reset user feedback after using it
@@ -153,18 +168,38 @@ if "recommendation_data" in st.session_state:
     
     with col1:
         if st.button("👍 I like it!"):
+            # Update user preferences with like
+            item_data = {
+                "name": data.get("name", "Unknown"),
+                "type": data.get("activity_type", "Unknown")
+            }
+            update_preferences_from_feedback("like", item_data)
             st.balloons()
-            st.success("Great! Have a wonderful time!")
+            st.success("Great! I'll remember you liked this for future recommendations!")
 
     with col2:
         if st.button("👎 Show me something else"):
+            # Update user preferences with dislike
+            item_data = {
+                "name": data.get("name", "Unknown"),
+                "type": data.get("activity_type", "Unknown")
+            }
+            update_preferences_from_feedback("dislike", item_data)
             # Store feedback to use in next recommendation
             st.session_state.user_feedback = "The user did not like the previous suggestion. Please provide a completely different recommendation."
             st.session_state.recommendation_shown = False
-            st.rerun()
+            st.experimental_rerun()
     
     # Know More button
     if st.button("🔎 Tell me more"):
+        # Update preferences when user views details
+        item_data = {
+            "name": data.get("name", "Unknown"),
+            "type": data.get("activity_type", "Unknown")
+        }
+        update_preferences_from_feedback("view_details", item_data)
+        
+        # Get detailed suggestion
         detailed = get_detailed_suggestion(
             user,
             model,
@@ -173,12 +208,54 @@ if "recommendation_data" in st.session_state:
         )
         st.markdown(f"### 📖 More details:\n\n{detailed}")
 
-# Reset button (for testing)
-if st.sidebar.button("Reset App"):
-    for key in list(st.session_state.keys()):
-        if key != "initialized" and key not in ["GOOGLE_MAPS_API_KEY", "model", "ors_client", "gmaps_client"]:
-            del st.session_state[key]
-    st.rerun()
+# Display personalization summary in sidebar
+with st.sidebar.expander("📊 Your Preference Profile"):
+    prefs = get_user_preferences_db()
+    
+    # Show category preferences
+    st.sidebar.subheader("Category Preferences")
+    if prefs["category_preferences"]:
+        for category, score in sorted(prefs["category_preferences"].items(), key=lambda x: x[1], reverse=True):
+            st.sidebar.write(f"- {category}: {score:.1f}")
+    else:
+        st.sidebar.write("No preferences recorded yet.")
+    
+    # Show recent likes
+    st.sidebar.subheader("Recent Likes")
+    if prefs["liked_places"]:
+        for item in prefs["liked_places"][-3:]:
+            st.sidebar.write(f"- {item['name']} ({item['type']})")
+    else:
+        st.sidebar.write("No likes recorded yet.")
+    
+    # Show recent dislikes
+    st.sidebar.subheader("Recent Dislikes")
+    if prefs["disliked_places"]:
+        for item in prefs["disliked_places"][-3:]:
+            st.sidebar.write(f"- {item['name']} ({item['type']})")
+    else:
+        st.sidebar.write("No dislikes recorded yet.")
+
+# Reset buttons
+with st.sidebar.expander("🔄 Reset Options"):
+    col1, col2 = st.sidebar.columns(2)
+    
+    with col1:
+        if st.button("Reset Suggestion"):
+            # Reset only current suggestion
+            if "recommendation_shown" in st.session_state:
+                del st.session_state.recommendation_shown
+            if "recommendation_data" in st.session_state:
+                del st.session_state.recommendation_data
+            st.experimental_rerun()
+            
+    with col2:
+        if st.button("Reset All"):
+            # Reset everything including preferences
+            for key in list(st.session_state.keys()):
+                if key != "initialized" and key not in ["GOOGLE_MAPS_API_KEY", "model", "ors_client", "gmaps_client"]:
+                    del st.session_state[key]
+            st.experimental_rerun()
 
 # Footer
 st.sidebar.markdown("---")
