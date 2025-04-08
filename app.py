@@ -20,6 +20,11 @@ from utils import (
     get_user_preferences_db,
     extract_main_keywords,
     fetch_image_for_keyword,
+    extract_keywords_from_prompt,  # New import
+    extract_food_keywords,  # New import
+    extract_nouns,  # New import
+    fetch_image_for_keyword,
+    fetch_unsplash_image,  # New import
     AppError, APIError, LLMError, ImageError
 )
 
@@ -128,42 +133,75 @@ if "recommendation_shown" not in st.session_state or not st.session_state.recomm
                     st.session_state.last_short_response = activity_description
             
                     # Extract keywords and fetch related image
+                    image_url = None
+                    main_keyword = None
+                    
                     try:
-                        # Extract keywords
-                        keywords = extract_keywords_from_prompt(activity_description)
-                        image_url = None
-                        
-                        # Try each keyword until we find an image
-                        if keywords:
+                        # First, try to extract keywords using the advanced method
+                        try:
+                            keywords = extract_keywords_from_prompt(activity_description)
+                            
+                            # Try each keyword until we find an image
                             for keyword in keywords:
-                                try:
-                                    image_url = fetch_image_for_keyword(keyword, st.session_state.GOOGLE_MAPS_API_KEY)
-                                    if image_url:
-                                        main_keyword = keyword  # Store successful keyword
-                                        break
-                                except Exception as e:
-                                    logging.error(f"Error fetching image for '{keyword}': {str(e)}")
+                                if not keyword or len(keyword.strip()) < 3:
                                     continue
                                     
+                                logging.info(f"Trying to fetch image for keyword: {keyword}")
+                                try:
+                                    # Try Google Maps API first
+                                    img_url = fetch_image_for_keyword(keyword, st.session_state.GOOGLE_MAPS_API_KEY)
+                                    if img_url:
+                                        image_url = img_url
+                                        main_keyword = keyword
+                                        logging.info(f"Found image for keyword: {keyword}")
+                                        break
+                                except Exception as img_err:
+                                    logging.error(f"Error fetching image for '{keyword}': {str(img_err)}")
+                                    continue
+                        except Exception as kw_err:
+                            logging.error(f"Error extracting keywords: {str(kw_err)}")
+                            
+                        # If still no image, try with the backup method
                         if not image_url:
-                            # Fallback to main extraction method if no image found
+                            # Fall back to simple extraction
                             main_keyword = extract_main_keywords(activity_description)
-                            image_url = fetch_image_for_keyword(main_keyword, st.session_state.GOOGLE_MAPS_API_KEY)
+                            if main_keyword and len(main_keyword) >= 3:
+                                logging.info(f"Trying fallback keyword: {main_keyword}")
+                                image_url = fetch_image_for_keyword(main_keyword, st.session_state.GOOGLE_MAPS_API_KEY)
+                            
+                        # Final direct fallback to Unsplash
+                        if not image_url and main_keyword:
+                            logging.info(f"Trying direct Unsplash fetch for: {main_keyword}")
+                            image_url = fetch_unsplash_image(main_keyword)
+                            
+                        # Last resort - try with the interest type
+                        if not image_url:
+                            logging.info(f"Using interest type as keyword: {top_interest}")
+                            image_url = fetch_unsplash_image(top_interest)
+                            main_keyword = top_interest
+                            
                     except Exception as e:
-                        logging.error(f"Error in keyword extraction or image fetching: {str(e)}")
-                        main_keyword = "indoor activity"
+                        logging.error(f"All image fetching methods failed: {str(e)}")
                         image_url = None
+                        main_keyword = top_interest
+            
+                    # Debug logging
+                    if image_url:
+                        logging.info(f"Successfully found image URL: {image_url} for keyword: {main_keyword}")
+                    else:
+                        logging.error("Failed to find any image URL")
             
                     st.session_state.recommendation_data = {
                         "type": "indoor",
                         "name": f"Indoor {top_interest} Activity",
                         "description": activity_description,
-                        "image_url": image_url,  # This might be None if image fetch failed
+                        "image_url": image_url,
                         "activity_type": top_interest,
-                        "keyword": main_keyword if 'main_keyword' in locals() else "indoor activity"
+                        "keyword": main_keyword if main_keyword else top_interest
                     }
                 except Exception as e:
                     logging.error(f"Error in indoor flow: {str(e)}")
+                    traceback.print_exc()
                     st.session_state.recommendation_data = {
                         "type": "indoor",
                         "name": "Indoor Activity Suggestion",
