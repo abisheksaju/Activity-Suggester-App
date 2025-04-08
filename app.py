@@ -178,7 +178,7 @@ if st.sidebar.button("Reset App"):
     for key in list(st.session_state.keys()):
         if key != "initialized" and key not in ["GOOGLE_MAPS_API_KEY", "model", "ors_client", "gmaps_client"]:
             del st.session_state[key]
-    st.experimental_rerun()
+    st.rerun()
 
 # Footer
 st.sidebar.markdown("---")
