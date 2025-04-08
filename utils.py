@@ -122,7 +122,7 @@ def fetch_places(user, top_interest, GOOGLE_MAPS_API_KEY):
     try:
         places_result = gmaps.places_nearby(
             location=(lat, lon),
-            radius=5000,
+            radius=20000,
             type=place_type,
             rank_by="prominence",
             open_now=True
