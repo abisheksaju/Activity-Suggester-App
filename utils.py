@@ -154,40 +154,85 @@ def extract_main_keywords(text):
 
 def extract_keywords_from_prompt(prompt):
     """
-    Extract keywords dynamically using OpenAI (or any LLM)
-    Fallback: extract nouns with spaCy or basic split.
+    Extract keywords dynamically from a prompt for image search.
+    Uses OpenAI if available, falls back to regex extraction.
     """
     try:
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You're a helpful assistant that extracts 2-3 most important keywords from a user prompt, ideally nouns or phrases relevant for image search.",
-                },
-                {"role": "user", "content": f"Extract keywords from: {prompt}"},
-            ],
-            temperature=0.3,
-        )
-        keywords_text = response["choices"][0]["message"]["content"].strip()
-        # Expecting comma-separated string of keywords
-        keywords = [kw.strip() for kw in keywords_text.split(",")]
-        return keywords
+        # Try using OpenAI for best extraction
+        if openai.api_key and openai.api_key != "Test":
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You're a helpful assistant that extracts 2-3 most important keywords from a user prompt, ideally nouns or phrases relevant for image search.",
+                    },
+                    {"role": "user", "content": f"Extract keywords from: {prompt}"},
+                ],
+                temperature=0.3,
+            )
+            keywords_text = response["choices"][0]["message"]["content"].strip()
+            # Expecting comma-separated string of keywords
+            keywords = [kw.strip() for kw in keywords_text.split(",")]
+            return keywords
+        else:
+            raise ValueError("OpenAI API key not properly configured")
 
     except Exception as e:
-        print(f"Keyword extraction failed: {e}")
-        # Fallback: return first 3 significant words
-        return prompt.split()[:3]
+        logger.warning(f"OpenAI keyword extraction failed: {e}")
+        # Fallback: Use regex to extract nouns (imperfect but useful)
+        try:
+            # Extract potential nouns (words with 4+ characters)
+            words = re.findall(r'\b[A-Za-z]{4,}\b', prompt)
+            
+            # Filter out common verbs and stop words
+            stop_words = ["that", "this", "with", "from", "your", "have", "will", 
+                         "what", "about", "which", "when", "make", "like", "how",
+                         "can", "time", "just", "being", "some", "take", "into"]
+            
+            keywords = [word for word in words if word.lower() not in stop_words]
+            
+            # Return up to 3 keywords
+            return keywords[:3] if keywords else ["activity"]
+        except:
+            # Last resort fallback
+            return prompt.split()[:3] if prompt else ["activity"]
+
+@safe_api_call
+def fetch_unsplash_image(keyword):
+    """
+    Fetch an image from Unsplash for a given keyword
+    """
+    try:
+        # Using the public Unsplash API (limited but no key required)
+        base_url = "https://source.unsplash.com/featured/?"
+        sanitized_keyword = keyword.replace(" ", "+")
+        
+        # Create the URL
+        image_url = f"{base_url}{sanitized_keyword}"
+        
+        # Make a request to validate the URL works
+        response = requests.head(image_url, allow_redirects=True)
+        
+        if response.status_code == 200:
+            return response.url
+        else:
+            logger.warning(f"Unsplash returned non-200 status for {keyword}: {response.status_code}")
+            return None
+            
+    except Exception as e:
+        logger.error(f"Error fetching Unsplash image for '{keyword}': {str(e)}")
         
 @safe_api_call
 def fetch_image_for_keyword(keyword, GOOGLE_MAPS_API_KEY):
     """
-    Fetch an image for a specific keyword using Google Places API
+    Fetch an image for a specific keyword using Google Places API with Unsplash fallback
     """
     try:
         if not keyword:
             return None
 
+        # Try Google Maps API first
         gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 
         # Search for places related to the keyword
@@ -200,24 +245,29 @@ def fetch_image_for_keyword(keyword, GOOGLE_MAPS_API_KEY):
         places_with_photos = [place for place in places_result.get("results", [])
                              if place.get("photos")]
 
-        if not places_with_photos:
-            logger.warning(f"No photos found for keyword: {keyword}")
-            return None
+        if places_with_photos:
+            # Select a random place with photos
+            selected_place = random.choice(places_with_photos)
 
-        # Select a random place with photos
-        selected_place = random.choice(places_with_photos)
+            # Get the photo reference
+            photo_reference = selected_place["photos"][0]["photo_reference"]
 
-        # Get the photo reference
-        photo_reference = selected_place["photos"][0]["photo_reference"]
-
-        # Build the URL for the photo
-        image_url = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference={photo_reference}&key={GOOGLE_MAPS_API_KEY}"
-
-        return image_url
+            # Build the URL for the photo
+            image_url = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference={photo_reference}&key={GOOGLE_MAPS_API_KEY}"
+            
+            return image_url
+        
+        # Fall back to Unsplash if Google doesn't have photos
+        logger.info(f"No Google Maps photos found for '{keyword}', trying Unsplash")
+        return fetch_unsplash_image(keyword)
 
     except Exception as e:
         logger.error(f"Error fetching image for keyword '{keyword}': {str(e)}")
-        raise ImageError(f"Could not fetch image for {keyword}", e)
+        # Try Unsplash as a final fallback
+        try:
+            return fetch_unsplash_image(keyword)
+        except:
+            raise ImageError(f"Could not fetch image for {keyword}", e)
 
 def top_activity_interest_llm(user):
     """
