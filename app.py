@@ -5,7 +5,7 @@ import google.generativeai as genai
 import logging
 import traceback
 
-# Import all functions from utils.py
+# Import from utils.py
 from utils import (
     get_synthetic_user,
     top_activity_interest_llm,
@@ -213,3 +213,152 @@ if "recommendation_shown" not in st.session_state or not st.session_state.recomm
                         "type": "indoor",
                         "name": "Activity Suggestion",
                         "description": "We recommend trying something fun related to your interests!",
+                        "image_url": None,
+                        "activity_type": "activity"
+                    }
+                    st.session_state.errors.append(f"Error creating outdoor suggestion: {str(e)}")
+
+            # Reset user feedback after using it
+            if st.session_state.user_feedback:
+                st.session_state.previous_feedback = st.session_state.user_feedback
+                st.session_state.user_feedback = None
+
+            st.session_state.recommendation_shown = True
+
+        except Exception as e:
+            logging.error(f"Unexpected error in recommendation process: {str(e)}")
+            traceback.print_exc()
+            st.session_state.errors.append(f"Unexpected error: {str(e)}")
+            # Set up a basic fallback recommendation
+            st.session_state.recommendation_data = {
+                "type": "indoor",
+                "name": "Activity Suggestion",
+                "description": "Try something relaxing or fun based on your interests!",
+                "image_url": None,
+                "activity_type": "activity"
+            }
+            st.session_state.recommendation_shown = True
+
+# Display the recommendation
+if "recommendation_data" in st.session_state:
+    data = st.session_state.recommendation_data
+
+    # Display image if available (for both indoor and outdoor activities)
+    if data.get("image_url"):
+        st.image(data["image_url"], use_column_width=True)
+
+    st.subheader("🔍 Suggested Activity")
+    st.write(data["description"])
+
+    # Show if this was based on previous feedback
+    if "previous_feedback" in st.session_state and st.session_state.previous_feedback:
+        st.info("This is a new suggestion based on your feedback.")
+        st.session_state.previous_feedback = None
+
+    # Action buttons
+    col1, col2 = st.columns(2)
+
+    with col1:
+        if st.button("👍 I like it!"):
+            # Update user preferences with like
+            item_data = {
+                "name": data.get("name", "Unknown"),
+                "type": data.get("activity_type", "Unknown")
+            }
+            update_preferences_from_feedback("like", item_data)
+            st.balloons()
+            st.success("Great! I'll remember you liked this for future recommendations!")
+
+    with col2:
+        if st.button("👎 Show me something else"):
+            # Update user preferences with dislike
+            item_data = {
+                "name": data.get("name", "Unknown"),
+                "type": data.get("activity_type", "Unknown")
+            }
+            update_preferences_from_feedback("dislike", item_data)
+            # Store feedback to use in next recommendation
+            st.session_state.user_feedback = "The user did not like the previous suggestion. Please provide a completely different recommendation."
+            st.session_state.recommendation_shown = False
+            st.rerun()
+
+    # Know More button
+    if st.button("🔎 Tell me more"):
+        # Update preferences when user views details
+        item_data = {
+            "name": data.get("name", "Unknown"),
+            "type": data.get("activity_type", "Unknown")
+        }
+        update_preferences_from_feedback("view_details", item_data)
+
+        # Get detailed suggestion
+        detailed = get_detailed_suggestion(
+            user,
+            model,
+            st.session_state.last_short_response,
+            st.session_state.top_interest
+        )
+        st.markdown(f"### 📖 More details:\n\n{detailed}")
+
+# Display errors if any occurred
+if "errors" in st.session_state and st.session_state.errors:
+    with st.expander("Troubleshooting Information", expanded=False):
+        st.warning("Some issues occurred while generating your recommendations. We've provided alternatives instead.")
+        for error in st.session_state.errors[-3:]:  # Show only the most recent errors
+            st.error(error)
+        if st.button("Clear Errors"):
+            st.session_state.errors = []
+            st.rerun()
+
+# Display personalization summary in sidebar
+with st.sidebar.expander("📊 Your Preference Profile"):
+    prefs = get_user_preferences_db()
+
+    # Show category preferences
+    st.sidebar.subheader("Category Preferences")
+    if prefs["category_preferences"]:
+        for category, score in sorted(prefs["category_preferences"].items(), key=lambda x: x[1], reverse=True):
+            st.sidebar.write(f"- {category}: {score:.1f}")
+    else:
+        st.sidebar.write("No preferences recorded yet.")
+
+    # Show recent likes
+    st.sidebar.subheader("Recent Likes")
+    if prefs["liked_places"]:
+        for item in prefs["liked_places"][-3:]:
+            st.sidebar.write(f"- {item['name']} ({item['type']})")
+    else:
+        st.sidebar.write("No likes recorded yet.")
+
+    # Show recent dislikes
+    st.sidebar.subheader("Recent Dislikes")
+    if prefs["disliked_places"]:
+        for item in prefs["disliked_places"][-3:]:
+            st.sidebar.write(f"- {item['name']} ({item['type']})")
+    else:
+        st.sidebar.write("No dislikes recorded yet.")
+
+# Reset buttons
+with st.sidebar.expander("🔄 Reset Options"):
+    col1, col2 = st.sidebar.columns(2)
+
+    with col1:
+        if st.button("Reset Suggestion"):
+            # Reset only current suggestion
+            if "recommendation_shown" in st.session_state:
+                del st.session_state.recommendation_shown
+            if "recommendation_data" in st.session_state:
+                del st.session_state.recommendation_data
+            st.rerun()
+
+    with col2:
+        if st.button("Reset All"):
+            # Reset everything including preferences
+            for key in list(st.session_state.keys()):
+                if key != "initialized" and key not in ["GOOGLE_MAPS_API_KEY", "model", "ors_client", "gmaps_client"]:
+                    del st.session_state[key]
+            st.rerun()
+
+# Footer
+st.sidebar.markdown("---")
+st.sidebar.caption("Activity Planner App • v1.0")
