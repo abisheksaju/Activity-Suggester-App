@@ -35,7 +35,7 @@ def get_synthetic_user():
             "travel": 0.93,
             "food": 0.81,
             "news": 0.65,
-            "shopping": 0.48,
+            "shopping": 0.58,
             "gaming": 0.76
         }
     }
