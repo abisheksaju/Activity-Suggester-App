@@ -263,3 +263,5 @@ Please give a more detailed, engaging, and informative version of the recommenda
 """
     response = model.generate_content(prompt)
     return response.text
+
+print("Hello InMobi")
