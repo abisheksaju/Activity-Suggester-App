@@ -17,8 +17,6 @@ import re
 from PIL import UnidentifiedImageError
 import openai
 
-#openai.api_key = "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"
-
 # Make sure to set OPENAI_API_KEY in your environment or replace here.
 #openai.api_key = os.getenv("OPENAI_API_KEY", "your-default-api-key")
 
