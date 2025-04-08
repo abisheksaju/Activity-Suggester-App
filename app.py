@@ -35,9 +35,8 @@ st.markdown("""
         color: gray;
     }
     </style>
-    <div class="custom-title">MeTime Genie</div>
+    <div class="custom-title">My Activity Planner</div>
 """, unsafe_allow_html=True)
-st.title("MeTime Genie")
 
 # Generate user context if not already in session
 if "user" not in st.session_state:
