@@ -60,9 +60,9 @@ def get_user_preferences_db():
 def update_preferences_from_feedback(preference_type, item_data):
     """Update the user preferences database based on feedback"""
     prefs = get_user_preferences_db()
-    
+
     timestamp = datetime.datetime.now().isoformat()
-    
+
     if preference_type == "like":
         # Add to liked places
         prefs["liked_places"].append({
@@ -70,14 +70,14 @@ def update_preferences_from_feedback(preference_type, item_data):
             "type": item_data.get("type", "Unknown"),
             "timestamp": timestamp
         })
-        
+
         # Update category preference
         category = item_data.get("type", "unknown")
         if category in prefs["category_preferences"]:
             prefs["category_preferences"][category] += 1
         else:
             prefs["category_preferences"][category] = 1
-            
+
     elif preference_type == "dislike":
         # Add to disliked places
         prefs["disliked_places"].append({
@@ -85,14 +85,14 @@ def update_preferences_from_feedback(preference_type, item_data):
             "type": item_data.get("type", "Unknown"),
             "timestamp": timestamp
         })
-        
+
         # Decrease category preference
         category = item_data.get("type", "unknown")
         if category in prefs["category_preferences"]:
             prefs["category_preferences"][category] -= 0.5
         else:
             prefs["category_preferences"][category] = -0.5
-    
+
     elif preference_type == "view_details":
         # Track when user views details (shows higher interest)
         prefs["viewed_details"].append({
@@ -100,14 +100,14 @@ def update_preferences_from_feedback(preference_type, item_data):
             "type": item_data.get("type", "Unknown"),
             "timestamp": timestamp
         })
-        
+
         # Slightly increase category preference
         category = item_data.get("type", "unknown")
         if category in prefs["category_preferences"]:
             prefs["category_preferences"][category] += 0.2
         else:
             prefs["category_preferences"][category] = 0.2
-    
+
     # Add to general feedback history
     prefs["feedback_history"].append({
         "type": preference_type,
@@ -115,10 +115,10 @@ def update_preferences_from_feedback(preference_type, item_data):
         "category": item_data.get("type", "Unknown"),
         "timestamp": timestamp
     })
-    
+
     # Calculate interest adjustments based on feedback history
     calculate_interest_adjustments(prefs)
-    
+
     return prefs
 
 def calculate_interest_adjustments(prefs):
@@ -128,20 +128,20 @@ def calculate_interest_adjustments(prefs):
     for feedback in prefs["feedback_history"]:
         category = feedback["category"]
         feedback_type = feedback["type"]
-        
+
         if category not in category_counts:
             category_counts[category] = {"like": 0, "dislike": 0, "view_details": 0}
-            
+
         if feedback_type in category_counts[category]:
             category_counts[category][feedback_type] += 1
-    
+
     # Calculate adjustments
     adjustments = {}
     for category, counts in category_counts.items():
         # Simple formula: likes + (views * 0.3) - dislikes
         score = counts.get("like", 0) + (counts.get("view_details", 0) * 0.3) - counts.get("dislike", 0)
         adjustments[category] = min(max(score * 0.1, -0.5), 0.5)  # Limit adjustment between -0.5 and 0.5
-    
+
     prefs["interest_adjustments"] = adjustments
 
 def get_adjusted_interests(user):
@@ -149,38 +149,38 @@ def get_adjusted_interests(user):
     interests = user.get("interests", {}).copy()
     prefs = get_user_preferences_db()
     adjustments = prefs.get("interest_adjustments", {})
-    
+
     # Apply adjustments
     for category, adjustment in adjustments.items():
         if category in interests:
             interests[category] = min(max(interests[category] + adjustment, 0), 1)  # Keep between 0 and 1
-    
+
     return interests
 
 # Personalized recommendation context building
 def build_personalized_context(user, top_interest):
     """Build a personalized context based on user feedback history"""
     prefs = get_user_preferences_db()
-    
+
     # Get recent likes and dislikes
     recent_likes = prefs["liked_places"][-3:] if prefs["liked_places"] else []
     recent_dislikes = prefs["disliked_places"][-3:] if prefs["disliked_places"] else []
-    
+
     likes_text = ""
     if recent_likes:
         likes_text = "Recent likes: " + ", ".join([like["name"] for like in recent_likes])
-    
+
     dislikes_text = ""
     if recent_dislikes:
         dislikes_text = "Recent dislikes: " + ", ".join([dislike["name"] for dislike in recent_dislikes])
-    
+
     # Get category preferences
     category_prefs = prefs["category_preferences"]
     categories_text = ""
     if category_prefs:
         sorted_categories = sorted(category_prefs.items(), key=lambda x: x[1], reverse=True)
         categories_text = "Category preferences: " + ", ".join([f"{cat} ({score})" for cat, score in sorted_categories])
-    
+
     # Build context
     context = f"""
 Based on the user's history:
@@ -193,10 +193,10 @@ Based on the user's history:
 # LLM Call 1 to fetch the top interest
 def top_activity_interest_llm(user_context):
     model = st.session_state.model
-    
+
     # Get adjusted interests based on feedback
     adjusted_interests = get_adjusted_interests(user_context)
-    
+
     prompt = f"""
     You are a smart assistant that ranks user interests in the context of the moment.
 
@@ -226,7 +226,7 @@ def top_activity_interest_llm(user_context):
 def build_llm_decision_prompt(user_context, top_interest):
     # Add personalized context
     personalized_context = build_personalized_context(user_context, top_interest)
-    
+
     return f"""
 You are a smart activity recommender. Given the user's details below, decide whether to suggest an outdoor place or an indoor activity:
 - Interest: {top_interest}
@@ -242,10 +242,10 @@ Reply with only one word: 'indoor' or 'outdoor'."""
 # LLM Prompt for Indoor Activity
 def build_llm_prompt_indoor(user_context, top_interest, user_feedback=None):
     feedback_note = "" if not user_feedback else f"{user_feedback} "
-    
+
     # Add personalized context
     personalized_context = build_personalized_context(user_context, top_interest)
-    
+
     prompt = f"""
 {feedback_note}You are a personalized indoor activity planner.
 User's top interest is: {top_interest}
@@ -264,14 +264,14 @@ Suggest a single interesting indoor activity that suits the user's interest and 
 # Fetch places using Google Maps API
 def fetch_places(user, top_interest, GOOGLE_MAPS_API_KEY):
     gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
-    
+
     location = user.get("location", {})
     if not location or "lat" not in location or "lon" not in location:
         st.error("Location data is missing or incomplete.")
         return []
 
     lat, lon = location["lat"], location["lon"]
-    
+
     # Map interests to place types
     interest_to_place_map = {
         "food": "restaurant",
@@ -281,9 +281,9 @@ def fetch_places(user, top_interest, GOOGLE_MAPS_API_KEY):
         "gaming": "arcade",
         "news": "library"
     }
-    
+
     place_type = interest_to_place_map.get(top_interest.lower(), "point_of_interest")
-    
+
     try:
         places_result = gmaps.places_nearby(
             location=(lat, lon),
@@ -292,22 +292,22 @@ def fetch_places(user, top_interest, GOOGLE_MAPS_API_KEY):
             rank_by="prominence",
             open_now=True
         )
-        
+
         # Get list of disliked places to avoid
         prefs = get_user_preferences_db()
         disliked_places = [item["name"].lower() for item in prefs["disliked_places"]]
-        
+
         # Filter places with photos and good ratings, avoiding disliked places
         filtered_places = []
         for place in places_result.get("results", []):
-            if (place.get("photos") and 
+            if (place.get("photos") and
                 place.get("user_ratings_total", 0) >= 20 and
                 place.get("name", "").lower() not in disliked_places):
                 place["type"] = top_interest  # Add type for tracking preferences
                 filtered_places.append(place)
             if len(filtered_places) >= 5:
                 break
-                
+
         return filtered_places
     except Exception as e:
         st.error(f"Error fetching places: {e}")
@@ -321,6 +321,112 @@ def fetch_place_image(place, GOOGLE_MAPS_API_KEY):
         if photo_reference:
             return f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference={photo_reference}&key={GOOGLE_MAPS_API_KEY}"
     return None
+
+def safe_api_call(func):
+    """Decorator for safely calling API functions"""
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            api_name = func.__name__
+            error_msg = f"Error in {api_name}: {str(e)}"
+            logger.error(error_msg)
+            logger.error(traceback.format_exc())
+            raise APIError(error_msg, api_name, e)
+    return wrapper
+
+def extract_main_keywords(text):
+    """
+    Extract main keywords from indoor activity description
+    """
+    try:
+        # If the text is empty or None, return a generic keyword
+        if not text:
+            return "indoor activity"
+
+        # List of food and activity keywords to look for
+        food_keywords = [
+            "dosa", "cooking", "baking", "food", "recipe", "cuisine", "dish",
+            "meal", "restaurant", "café", "bakery", "pizza", "burger", "pasta",
+            "sushi", "curry", "breakfast", "lunch", "dinner", "snack",
+            "dessert", "coffee", "tea", "smoothie", "cocktail"
+        ]
+
+        activity_keywords = [
+            "yoga", "meditation", "painting", "drawing", "art", "craft",
+            "reading", "book", "game", "gaming", "movie", "film", "music",
+            "dance", "workout", "exercise", "pottery", "chess", "board game",
+            "puzzle", "knitting", "photography", "baking", "cooking"
+        ]
+
+        # Combine all keywords
+        all_keywords = food_keywords + activity_keywords
+
+        # Convert to lowercase for case-insensitive matching
+        text_lower = text.lower()
+
+        # Find matching keywords
+        matches = []
+        for keyword in all_keywords:
+            if keyword in text_lower:
+                matches.append(keyword)
+
+        # If we found any matches, return the longest one (likely most specific)
+        if matches:
+            return max(matches, key=len)
+
+        # If no specific matches, use regex to find nouns (imperfect but useful fallback)
+        words = re.findall(r'\b[A-Za-z]{4,}\b', text)
+        if words:
+            # Return the longest word as a fallback
+            return max(words, key=len)
+
+        # Last resort
+        return "indoor activity"
+
+    except Exception as e:
+        logger.error(f"Error extracting keywords: {str(e)}")
+        return "indoor activity"  # Fallback
+
+@safe_api_call
+def fetch_image_for_keyword(keyword, GOOGLE_MAPS_API_KEY):
+    """
+    Fetch an image for a specific keyword using Google Places API
+    """
+    try:
+        if not keyword:
+            return None
+
+        gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
+
+        # Search for places related to the keyword
+        places_result = gmaps.places(
+            query=keyword,
+            language="en",
+        )
+
+        # Filter places with photos
+        places_with_photos = [place for place in places_result.get("results", [])
+                             if place.get("photos")]
+
+        if not places_with_photos:
+            logger.warning(f"No photos found for keyword: {keyword}")
+            return None
+
+        # Select a random place with photos
+        selected_place = random.choice(places_with_photos)
+
+        # Get the photo reference
+        photo_reference = selected_place["photos"][0]["photo_reference"]
+
+        # Build the URL for the photo
+        image_url = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference={photo_reference}&key={GOOGLE_MAPS_API_KEY}"
+
+        return image_url
+
+    except Exception as e:
+        logger.error(f"Error fetching image for keyword '{keyword}': {str(e)}")
+        raise ImageError(f"Could not fetch image for {keyword}", e)
 
 # Calculate travel time
 def get_route_duration(from_coords, to_coords, ors_client):
@@ -343,24 +449,24 @@ def choose_place(user, places, model, user_feedback=None):
 
     # Enrich place data
     enriched_places = []
-    
+
     lat = user['location']['lat']
     lon = user['location']['lon']
     ors_client = st.session_state.ors_client
-    
+
     # Get personalized context
     personalized_context = build_personalized_context(user, st.session_state.top_interest)
-    
+
     for idx, place in enumerate(places[:3]):  # Limit to top 3 for brevity
         place_lat = place['geometry']['location']['lat']
         place_lon = place['geometry']['location']['lng']
-        
+
         travel_time_mins = get_route_duration((lon, lat), (place_lon, place_lat), ors_client)
         if travel_time_mins:
             travel_time_mins *= 2  # Round trip
         else:
             travel_time_mins = "unknown"
-            
+
         enriched_places.append({
             "prominence_rank": idx + 1,
             "name": place.get("name", "Unknown place"),
@@ -373,7 +479,7 @@ def choose_place(user, places, model, user_feedback=None):
 
     # Include user feedback in the prompt if available
     feedback_note = "" if not user_feedback else f"{user_feedback} "
-    
+
     # Create a prompt with summaries of the place options
     prompt = f"""
 {feedback_note}You're a helpful assistant helping a user decide what to do next.
@@ -403,7 +509,7 @@ Make your response 1-2 short, fun, personal sentences that could show up on a ph
     try:
         response = model.generate_content(prompt)
         description = response.text.strip()
-        
+
         # If user provided feedback, try to select a different place than before
         if user_feedback and "previous_place_id" in st.session_state:
             # Try to pick a different place
@@ -413,7 +519,7 @@ Make your response 1-2 short, fun, personal sentences that could show up on a ph
                     # Add enrichment data
                     place.update({"description": description})
                     return place, description
-        
+
         # Store the selected place ID for future reference
         if places and len(places) > 0:
             st.session_state.previous_place_id = places[0].get("place_id")
@@ -428,7 +534,7 @@ Make your response 1-2 short, fun, personal sentences that could show up on a ph
 def get_detailed_suggestion(user, model, last_short_response, top_interest):
     # Add personalized context
     personalized_context = build_personalized_context(user, top_interest)
-    
+
     prompt = f"""
 You are a helpful assistant.
 
@@ -451,5 +557,3 @@ Please give a more detailed, engaging, and informative version of the recommenda
 """
     response = model.generate_content(prompt)
     return response.text
-
-print("Hello Saju Hahaha")
