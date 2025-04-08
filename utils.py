@@ -59,12 +59,13 @@ def fetch_places(user, top_interest, GOOGLE_MAPS_API_KEY):
 
 
 # Fetch image for a place (if available)
-def fetch_place_image(place, gmaps_client):
+def fetch_place_image(place, GOOGLE_MAPS_API_KEY):
     photos = place.get("photos")
     if photos:
         photo_reference = photos[0]["photo_reference"]
-        return f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference={photo_reference}&key={gmaps_client.key}"
+        return f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference={photo_reference}&key={GOOGLE_MAPS_API_KEY}"
     return None
+
 
 # Choose one place randomly
 def choose_place(user, places, model):
