@@ -92,7 +92,7 @@ Time: {user_context['current_time']}
 Free time available: {user_context['free_hours']} hours
 Location: {user_context['location']['city']}
 
-Suggest a single interesting indoor activity that suits the user's interest and context. Make it personal, fun, and specific to {top_interest}. Make the output 1–2 short, fun, personal sentences that could show up on a phone lockscreen.
+Suggest a single interesting indoor activity that suits the user's interest and context. Make it personal, fun, and specific to {top_interest}. Make the output 1–2 in short, fun, personal sentences that could show up on a phone lockscreen. Do not give any other output other than that.
 """
     return prompt
 
