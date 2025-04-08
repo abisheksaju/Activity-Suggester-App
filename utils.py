@@ -278,24 +278,28 @@ def extract_nouns(text):
 @safe_api_call
 def fetch_unsplash_image(keyword):
     """
-    Fetch an image from Unsplash API for a given keyword
+    Fetch an image from Unsplash API for a given keyword with improved fallbacks
     """
     try:
         # Check if we have an Unsplash API key in the environment or secrets
         UNSPLASH_ACCESS_KEY = os.environ.get("UNSPLASH_ACCESS_KEY") or st.secrets.get("UNSPLASH_ACCESS_KEY", None)
         
+        # Simplify the keyword to improve hit rate
+        original_keyword = keyword
+        simplified_keyword = simplify_keyword(keyword)
+        
         if not UNSPLASH_ACCESS_KEY:
             logger.warning("No Unsplash API key found, falling back to public URL")
             # Fallback to no-API method if no key available
             base_url = "https://source.unsplash.com/1600x900/?"
-            sanitized_keyword = keyword.replace(" ", "+")
+            sanitized_keyword = simplified_keyword.replace(" ", "+")
             return f"{base_url}{sanitized_keyword}"
         
         # Use the official Unsplash API
         response = requests.get(
             "https://api.unsplash.com/search/photos",
             params={
-                "query": keyword,
+                "query": simplified_keyword,
                 "client_id": UNSPLASH_ACCESS_KEY,
                 "per_page": 1
             }
@@ -307,35 +311,150 @@ def fetch_unsplash_image(keyword):
                 # Return the small or regular sized image URL
                 return data["results"][0]["urls"]["regular"]
             else:
-                logger.warning(f"No Unsplash results for keyword: {keyword}")
-                # Fall back to the public URL method
+                logger.warning(f"No Unsplash results for keyword: {simplified_keyword}")
+                # Try with even more simplified keyword
+                core_keyword = extract_core_keyword(original_keyword)
+                if core_keyword != simplified_keyword:
+                    logger.info(f"Trying with core keyword: {core_keyword}")
+                    try:
+                        response = requests.get(
+                            "https://api.unsplash.com/search/photos",
+                            params={
+                                "query": core_keyword,
+                                "client_id": UNSPLASH_ACCESS_KEY,
+                                "per_page": 1
+                            }
+                        )
+                        if response.status_code == 200:
+                            data = response.json()
+                            if data["results"] and len(data["results"]) > 0:
+                                return data["results"][0]["urls"]["regular"]
+                    except Exception as e:
+                        logger.warning(f"Error with core keyword attempt: {str(e)}")
+                
+                # Fall back to the public URL method with simplified keyword
                 base_url = "https://source.unsplash.com/1600x900/?"
-                sanitized_keyword = keyword.replace(" ", "+")
+                sanitized_keyword = core_keyword.replace(" ", "+")
                 return f"{base_url}{sanitized_keyword}"
         else:
             logger.warning(f"Unsplash API error: {response.status_code}")
             # Fall back to the public URL method
+            core_keyword = extract_core_keyword(original_keyword)
             base_url = "https://source.unsplash.com/1600x900/?"
-            sanitized_keyword = keyword.replace(" ", "+")
+            sanitized_keyword = core_keyword.replace(" ", "+")
             return f"{base_url}{sanitized_keyword}"
             
     except Exception as e:
         logger.error(f"Error fetching Unsplash image for '{keyword}': {str(e)}")
         # Final fallback
+        core_keyword = extract_core_keyword(keyword)
         base_url = "https://source.unsplash.com/1600x900/?"
-        sanitized_keyword = keyword.replace(" ", "+")
+        sanitized_keyword = core_keyword.replace(" ", "+")
         return f"{base_url}{sanitized_keyword}"
-        
-@safe_api_call
-def fetch_image_for_keyword(keyword, GOOGLE_MAPS_API_KEY):
+
+def simplify_keyword(keyword):
     """
-    Fetch an image for a specific keyword using Google Places API with Unsplash fallback
+    Simplify a complex keyword phrase to increase hit rate with image APIs
+    """
+    # If keyword is already simple, return as is
+    if len(keyword.split()) <= 2:
+        return keyword
+        
+    # Remove common phrases that make keywords too specific
+    removable_phrases = [
+        "from scratch", "homemade", "a batch of", "watching", "making", "cooking",
+        "baking", "playing", "trying", "batch of", "going to", "session of"
+    ]
+    
+    result = keyword.lower()
+    for phrase in removable_phrases:
+        result = result.replace(phrase, "")
+    
+    # Clean up extra spaces
+    result = re.sub(r'\s+', ' ', result).strip()
+    
+    return result
+
+def extract_core_keyword(keyword):
+    """
+    Extract the core subject from a keyword phrase
+    Example: "batch of homemade pasta from scratch" -> "pasta"
+    """
+    # List of common subjects
+    common_subjects = [
+        "pasta", "pizza", "movie", "film", "game", "book", "yoga", "meditation",
+        "painting", "drawing", "music", "coffee", "tea", "cake", "cookie", "bread",
+        "soup", "salad", "dessert", "craft", "puzzle", "chess", "board game"
+    ]
+    
+    # First check if any common subject is in the keyword
+    keyword_lower = keyword.lower()
+    for subject in common_subjects:
+        if subject in keyword_lower:
+            return subject
+    
+    # If not found, just take the last word (often the main subject)
+    words = keyword_lower.split()
+    if words:
+        # Remove common modifiers if they're the last word
+        if words[-1] in ["recipe", "activity", "project", "session"]:
+            if len(words) > 1:
+                return words[-2]
+        return words[-1]
+    
+    return keyword  # Fallback to original
+
+@safe_api_call
+def fetch_google_images(keyword, GOOGLE_CSE_ID, GOOGLE_API_KEY):
+    """
+    Fetch images using Google Custom Search API as a more robust alternative
+    """
+    try:
+        if not GOOGLE_CSE_ID or not GOOGLE_API_KEY:
+            logger.warning("Missing Google CSE credentials")
+            return None
+            
+        # Simplify the keyword to improve hit rate
+        simplified_keyword = simplify_keyword(keyword)
+            
+        url = "https://www.googleapis.com/customsearch/v1"
+        params = {
+            'q': simplified_keyword,
+            'cx': GOOGLE_CSE_ID,
+            'key': GOOGLE_API_KEY,
+            'searchType': 'image',
+            'num': 1
+        }
+        
+        response = requests.get(url, params=params)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if 'items' in data and len(data['items']) > 0:
+                return data['items'][0]['link']
+        else:
+            logger.warning(f"Google CSE error: {response.status_code}")
+            
+        return None
+    except Exception as e:
+        logger.error(f"Error fetching Google image for '{keyword}': {str(e)}")
+        return None
+
+@safe_api_call
+def fetch_image_for_keyword(keyword, GOOGLE_MAPS_API_KEY, GOOGLE_CSE_ID=None, GOOGLE_CSE_API_KEY=None):
+    """
+    Fetch an image for a specific keyword using multiple services with improved fallbacks
     """
     try:
         if not keyword:
             return None
         
         logging.info(f"Fetching image for keyword: {keyword}")
+        original_keyword = keyword
+        simplified_keyword = simplify_keyword(keyword)
+        core_keyword = extract_core_keyword(keyword)
+        
+        logging.info(f"Original: '{original_keyword}', Simplified: '{simplified_keyword}', Core: '{core_keyword}'")
 
         # Try Google Maps API first
         try:
@@ -343,13 +462,12 @@ def fetch_image_for_keyword(keyword, GOOGLE_MAPS_API_KEY):
 
             # Search for places related to the keyword
             places_result = gmaps.places(
-                query=keyword,
+                query=simplified_keyword,
                 language="en",
             )
 
-            # Filter places with photos
             places_with_photos = [place for place in places_result.get("results", [])
-                                if place.get("photos")]
+                              if place.get("photos")]
 
             if places_with_photos:
                 # Select a random place with photos
@@ -361,17 +479,52 @@ def fetch_image_for_keyword(keyword, GOOGLE_MAPS_API_KEY):
                 # Build the URL for the photo
                 image_url = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference={photo_reference}&key={GOOGLE_MAPS_API_KEY}"
                 
-                logging.info(f"Got image from Google Places API")
+                logging.info("Got image from Google Places API")
                 return image_url
         except Exception as e:
             logging.warning(f"Google Places image fetch failed: {str(e)}")
-            # Continue to Unsplash
         
-        # Fall back to Unsplash
-        logging.info(f"Falling back to Unsplash for keyword: {keyword}")
-        unsplash_url = fetch_unsplash_image(keyword)
+        # Try Google Custom Search API if available
+        if GOOGLE_CSE_ID and GOOGLE_CSE_API_KEY:
+            try:
+                google_image = fetch_google_images(original_keyword, GOOGLE_CSE_ID, GOOGLE_CSE_API_KEY)
+                if google_image:
+                    logging.info("Got image from Google Custom Search API")
+                    return google_image
+                    
+                # Try with simplified keyword
+                google_image = fetch_google_images(simplified_keyword, GOOGLE_CSE_ID, GOOGLE_CSE_API_KEY)
+                if google_image:
+                    logging.info("Got image from Google Custom Search API with simplified keyword")
+                    return google_image
+                    
+                # Try with core keyword
+                google_image = fetch_google_images(core_keyword, GOOGLE_CSE_ID, GOOGLE_CSE_API_KEY)
+                if google_image:
+                    logging.info("Got image from Google Custom Search API with core keyword")
+                    return google_image
+            except Exception as e:
+                logging.warning(f"Google CSE image fetch failed: {str(e)}")
+        
+        # Fall back to Unsplash - first try original keyword
+        logging.info(f"Falling back to Unsplash for keyword: {original_keyword}")
+        unsplash_url = fetch_unsplash_image(original_keyword)
         if unsplash_url:
-            logging.info(f"Got image from Unsplash")
+            logging.info("Got image from Unsplash with original keyword")
+            return unsplash_url
+            
+        # Try simplified keyword
+        logging.info(f"Trying Unsplash with simplified keyword: {simplified_keyword}")
+        unsplash_url = fetch_unsplash_image(simplified_keyword)
+        if unsplash_url:
+            logging.info("Got image from Unsplash with simplified keyword")
+            return unsplash_url
+            
+        # Try core keyword
+        logging.info(f"Trying Unsplash with core keyword: {core_keyword}")
+        unsplash_url = fetch_unsplash_image(core_keyword)
+        if unsplash_url:
+            logging.info("Got image from Unsplash with core keyword")
             return unsplash_url
             
         return None
