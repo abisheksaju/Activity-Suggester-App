@@ -92,9 +92,9 @@ def get_synthetic_user():
         ],
         "interests": {
             "travel": 0.81,
-            "food": 0.93,
+            "food": 0.48,
             "news": 0.65,
-            "shopping": 0.48,
+            "shopping": 0.93,
             "gaming": 0.76
         }
     }
