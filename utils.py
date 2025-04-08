@@ -1,9 +1,20 @@
-# Add these imports at the top of utils.py
+# This code should be placed at the beginning of utils.py, before any other functions
+
+import datetime
+import random
+import pandas as pd
+import openrouteservice
+import googlemaps
+import requests
+import streamlit as st
+import google.generativeai as genai
+import os
+import json
+from pathlib import Path
 import traceback
 import logging
-from PIL import UnidentifiedImageError
-import random
 import re
+from PIL import UnidentifiedImageError
 
 # Set up logging
 logging.basicConfig(
@@ -12,6 +23,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger('activity_suggester')
 
+# Custom exception classes
 class AppError(Exception):
     """Base exception class for application errors"""
     def __init__(self, message, error_type="general", original_exception=None):
@@ -142,33 +154,83 @@ def fetch_image_for_keyword(keyword, GOOGLE_MAPS_API_KEY):
         logger.error(f"Error fetching image for keyword '{keyword}': {str(e)}")
         raise ImageError(f"Could not fetch image for {keyword}", e)
 
-# Enhanced indoor activity function with image
-def build_llm_prompt_indoor(user_context, top_interest, user_feedback=None):
-    """Build prompt for indoor activity with better error handling"""
-    try:
-        feedback_note = "" if not user_feedback else f"{user_feedback} "
+# Function to cleanly update app.py to work with the new utils.py
+def create_app_update_instructions():
+    """
+    This function is just documentation to explain how to update app.py
+    """
+    return """
+    To update app.py to work with the new utils.py:
 
-        # Add personalized context
-        personalized_context = build_personalized_context(user_context, top_interest)
+    1. Keep the original imports but add the new ones:
+       ```python
+       from utils import (
+           get_synthetic_user,
+           top_activity_interest_llm,
+           build_llm_decision_prompt,
+           build_llm_prompt_indoor,
+           fetch_places,
+           fetch_place_image,
+           choose_place,
+           get_detailed_suggestion,
+           init_clients,
+           update_preferences_from_feedback,
+           get_user_preferences_db,
+           extract_main_keywords,  # New import
+           fetch_image_for_keyword,  # New import
+           AppError, APIError, LLMError, ImageError  # New error classes
+       )
+       import logging
+       import traceback
+       ```
 
-        prompt = f"""
-{feedback_note}You are a personalized indoor activity planner.
-User's top interest is: {top_interest}
-Current weather: {user_context['weather']}
-Time: {user_context['current_time']}
-Free time available: {user_context['free_hours']} hours
-Location: {user_context['location']['city']}
+    2. Add error handling setup at the start of the app
+       ```python
+       # Set up error handling in the app
+       if "errors" not in st.session_state:
+           st.session_state.errors = []
+       ```
 
-User History and Preferences:
-{personalized_context}
+    3. Update the recommendation section with try/except blocks
 
-Suggest a single interesting indoor activity that suits the user's interest and context. Make it personal, fun, and specific to {top_interest}. Make the output 1–2 short, fun, personal sentences that could show up on a phone lockscreen.
-"""
-        return prompt
-    except Exception as e:
-        logger.error(f"Error building indoor prompt: {str(e)}")
-        # Provide a simplified fallback prompt
-        return f"Suggest a fun indoor {top_interest} activity in 1-2 sentences."
+    4. Add the error display at the bottom of the app
+    """
+
+# Ensure the original functions remain in utils.py
+# (These functions should already exist in your utils.py)
+# Set up clients
+def init_clients(openroute_api_key, google_maps_api_key):
+    ors_client = openrouteservice.Client(key=openroute_api_key)
+    gmaps_client = googlemaps.Client(key=google_maps_api_key)
+    return ors_client, gmaps_client
+
+# Generate synthetic user context
+def get_synthetic_user():
+    # This is a placeholder function that returns synthetic user data
+    # In a real app, you would get this data from the user's actual context
+    return {
+        "location": {
+            "city": "Bangalore",
+            "lat": 12.9716,
+            "lon": 77.5946
+        },
+        "weather": "Cloudy",
+        "current_time": "Saturday 3 PM",
+        "free_hours": 4,
+        "calendar": [
+            {"event": "Lunch with friend", "start": "1 PM", "end": "2 PM"},
+            {"event": "Office Meeting", "start": "4 PM", "end": "6:30 PM"}
+        ],
+        "interests": {
+            "travel": 0.93,
+            "food": 0.81,
+            "news": 0.65,
+            "shopping": 0.48,
+            "gaming": 0.76
+        }
+    }
+
+# Do not remove the original functions, only add the new ones
 
 # Enhanced version of choose_place with better error handling
 @safe_api_call
