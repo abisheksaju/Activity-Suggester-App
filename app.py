@@ -25,6 +25,7 @@ from utils import (
     extract_nouns,  # New import
     fetch_image_for_keyword,
     fetch_unsplash_image,  # New import
+    fetch_google_images, extract_core_keyword, simplify_keyword,
     AppError, APIError, LLMError, ImageError
 )
 
