@@ -197,30 +197,6 @@ if "recommendation_shown" not in st.session_state or not st.session_state.recomm
                         logging.error(f"All image fetching methods failed: {str(e)}")
                         image_url = None
                         main_keyword = top_interest
-                            
-                        # If still no image, try with the backup method
-                        if not image_url:
-                            # Fall back to simple extraction
-                            main_keyword = extract_main_keywords(activity_description)
-                            if main_keyword and len(main_keyword) >= 3:
-                                logging.info(f"Trying fallback keyword: {main_keyword}")
-                                image_url = fetch_image_for_keyword(main_keyword, st.session_state.GOOGLE_MAPS_API_KEY)
-                            
-                        # Final direct fallback to Unsplash
-                        if not image_url and main_keyword:
-                            logging.info(f"Trying direct Unsplash fetch for: {main_keyword}")
-                            image_url = fetch_unsplash_image(main_keyword)
-                            
-                        # Last resort - try with the interest type
-                        if not image_url:
-                            logging.info(f"Using interest type as keyword: {top_interest}")
-                            image_url = fetch_unsplash_image(top_interest)
-                            main_keyword = top_interest
-                            
-                    except Exception as e:
-                        logging.error(f"All image fetching methods failed: {str(e)}")
-                        image_url = None
-                        main_keyword = top_interest
             
                     # Debug logging
                     if image_url:
