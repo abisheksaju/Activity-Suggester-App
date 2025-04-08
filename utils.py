@@ -22,6 +22,8 @@ openai.api_key = "sk-proj-eopehuf9t3YYoTjPdbDRrOBeeJSUDs-FE4827WZNddEthaa6xRs3PZ
 # Make sure to set OPENAI_API_KEY in your environment or replace here.
 #openai.api_key = os.getenv("OPENAI_API_KEY", "your-default-api-key")
 
+UNSPLASH_ACCESS_KEY = "rVvxvkYuJREpI8wMn9GvJUGhj5bZVlVFBkKMx1QquQA"
+
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
@@ -154,74 +156,175 @@ def extract_main_keywords(text):
 
 def extract_keywords_from_prompt(prompt):
     """
-    Extract keywords dynamically from a prompt for image search.
-    Uses OpenAI if available, falls back to regex extraction.
+    Extract the most relevant keywords from an activity description for image search
     """
     try:
-        # Try using OpenAI for best extraction
+        # If we have OpenAI access, use it for best results
         if openai.api_key and openai.api_key != "Test":
-            response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You're a helpful assistant that extracts 2-3 most important keywords from a user prompt, ideally nouns or phrases relevant for image search.",
-                    },
-                    {"role": "user", "content": f"Extract keywords from: {prompt}"},
-                ],
-                temperature=0.3,
-            )
-            keywords_text = response["choices"][0]["message"]["content"].strip()
-            # Expecting comma-separated string of keywords
-            keywords = [kw.strip() for kw in keywords_text.split(",")]
-            return keywords
-        else:
-            raise ValueError("OpenAI API key not properly configured")
-
+            try:
+                response = openai.ChatCompletion.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "Extract 3 important keywords for image search from the text, ordered from most to least specific. Return only the keywords separated by commas, nothing else.",
+                        },
+                        {"role": "user", "content": prompt},
+                    ],
+                    temperature=0.3,
+                    max_tokens=30,
+                )
+                extracted_text = response["choices"][0]["message"]["content"].strip()
+                keywords = [kw.strip() for kw in extracted_text.split(',')]
+                return keywords
+            except Exception as e:
+                logging.warning(f"OpenAI extraction failed: {e}")
+                # Continue to fallback methods
+        
+        # Fallback 1: Pattern-based extraction for specific activities
+        # Look for bold or asterisk-emphasized text which often contains the activity name
+        emphasized = re.findall(r'\*\*(.*?)\*\*|\*(.*?)\*', prompt)
+        emphasized_keywords = []
+        for match_pair in emphasized:
+            # Each match is a tuple with one empty value
+            for match in match_pair:
+                if match:
+                    emphasized_keywords.append(match)
+        
+        if emphasized_keywords:
+            return emphasized_keywords + extract_food_keywords(prompt)
+        
+        # Fallback 2: Look for food/activity specific patterns
+        food_keywords = extract_food_keywords(prompt)
+        if food_keywords:
+            return food_keywords
+            
+        # Fallback 3: Extract phrases that might be activities
+        activity_phrases = re.findall(r'(making|cooking|baking|playing|watching|trying) ([a-zA-Z\s]+)', prompt)
+        if activity_phrases:
+            return [f"{verb} {obj}" for verb, obj in activity_phrases[:2]] + extract_nouns(prompt)[:1]
+        
+        # Final fallback: Just extract potential nouns
+        return extract_nouns(prompt)
+        
     except Exception as e:
-        logger.warning(f"OpenAI keyword extraction failed: {e}")
-        # Fallback: Use regex to extract nouns (imperfect but useful)
-        try:
-            # Extract potential nouns (words with 4+ characters)
-            words = re.findall(r'\b[A-Za-z]{4,}\b', prompt)
-            
-            # Filter out common verbs and stop words
-            stop_words = ["that", "this", "with", "from", "your", "have", "will", 
-                         "what", "about", "which", "when", "make", "like", "how",
-                         "can", "time", "just", "being", "some", "take", "into"]
-            
-            keywords = [word for word in words if word.lower() not in stop_words]
-            
-            # Return up to 3 keywords
-            return keywords[:3] if keywords else ["activity"]
-        except:
-            # Last resort fallback
-            return prompt.split()[:3] if prompt else ["activity"]
+        logging.error(f"All keyword extraction methods failed: {str(e)}")
+        # Last resort - split by spaces and take longest words (likely nouns)
+        words = prompt.split()
+        words.sort(key=len, reverse=True)
+        return words[:3] if words else ["activity"]
+
+def extract_food_keywords(text):
+    """Extract food-related keywords which are common in indoor activities"""
+    # Common food patterns
+    food_patterns = [
+        r"(?:making|cooking|baking|prepare|preparing|homemade) ([a-zA-Z\s]+)",  # cooking X
+        r"(?:make|cook|bake|try) ([a-zA-Z\s]+)",  # make X
+        r"([a-zA-Z\s]+) recipe",  # X recipe
+        r"([a-zA-Z\s]+) from scratch"  # X from scratch
+    ]
+    
+    matches = []
+    for pattern in food_patterns:
+        found = re.findall(pattern, text.lower())
+        if found:
+            matches.extend(found)
+    
+    # Clean up matches
+    cleaned = []
+    for match in matches:
+        # Remove articles and filler words
+        for word in ["a", "the", "some", "your", "own"]:
+            match = re.sub(r'\b' + word + r'\b', '', match)
+        match = re.sub(r'\s+', ' ', match).strip()
+        if match and len(match) > 3:
+            cleaned.append(match)
+    
+    return cleaned[:3] if cleaned else []
+
+def extract_nouns(text):
+    """Extract potential nouns from text"""
+    # Simple regex-based noun extraction
+    # Words that are capitalized or 4+ characters and not in stop list
+    stop_words = ["that", "this", "with", "from", "your", "have", "will", "what", 
+                 "about", "which", "when", "make", "like", "how", "can", "time",
+                 "just", "being", "some", "take", "into", "spicy", "delicious", "easy"]
+    
+    # First look for noun phrases
+    noun_phrases = re.findall(r'([a-zA-Z]{3,}(?:\s+[a-zA-Z]{3,}){1,2})', text)
+    
+    # Then individual potential nouns
+    words = re.findall(r'\b[A-Za-z]{4,}\b', text)
+    
+    # Filter and combine
+    result = []
+    
+    for phrase in noun_phrases:
+        if all(word.lower() not in stop_words for word in phrase.split()):
+            result.append(phrase)
+    
+    for word in words:
+        if word.lower() not in stop_words:
+            result.append(word)
+    
+    # Deduplicate and limit
+    unique_results = []
+    for item in result:
+        if item not in unique_results:
+            unique_results.append(item)
+    
+    return unique_results[:3]
 
 @safe_api_call
 def fetch_unsplash_image(keyword):
     """
-    Fetch an image from Unsplash for a given keyword
+    Fetch an image from Unsplash API for a given keyword
     """
     try:
-        # Using the public Unsplash API (limited but no key required)
-        base_url = "https://source.unsplash.com/featured/?"
-        sanitized_keyword = keyword.replace(" ", "+")
+        # Check if we have an Unsplash API key in the environment or secrets
+        UNSPLASH_ACCESS_KEY = os.environ.get("UNSPLASH_ACCESS_KEY") or st.secrets.get("UNSPLASH_ACCESS_KEY", None)
         
-        # Create the URL
-        image_url = f"{base_url}{sanitized_keyword}"
+        if not UNSPLASH_ACCESS_KEY:
+            logger.warning("No Unsplash API key found, falling back to public URL")
+            # Fallback to no-API method if no key available
+            base_url = "https://source.unsplash.com/1600x900/?"
+            sanitized_keyword = keyword.replace(" ", "+")
+            return f"{base_url}{sanitized_keyword}"
         
-        # Make a request to validate the URL works
-        response = requests.head(image_url, allow_redirects=True)
+        # Use the official Unsplash API
+        response = requests.get(
+            "https://api.unsplash.com/search/photos",
+            params={
+                "query": keyword,
+                "client_id": UNSPLASH_ACCESS_KEY,
+                "per_page": 1
+            }
+        )
         
         if response.status_code == 200:
-            return response.url
+            data = response.json()
+            if data["results"] and len(data["results"]) > 0:
+                # Return the small or regular sized image URL
+                return data["results"][0]["urls"]["regular"]
+            else:
+                logger.warning(f"No Unsplash results for keyword: {keyword}")
+                # Fall back to the public URL method
+                base_url = "https://source.unsplash.com/1600x900/?"
+                sanitized_keyword = keyword.replace(" ", "+")
+                return f"{base_url}{sanitized_keyword}"
         else:
-            logger.warning(f"Unsplash returned non-200 status for {keyword}: {response.status_code}")
-            return None
+            logger.warning(f"Unsplash API error: {response.status_code}")
+            # Fall back to the public URL method
+            base_url = "https://source.unsplash.com/1600x900/?"
+            sanitized_keyword = keyword.replace(" ", "+")
+            return f"{base_url}{sanitized_keyword}"
             
     except Exception as e:
         logger.error(f"Error fetching Unsplash image for '{keyword}': {str(e)}")
+        # Final fallback
+        base_url = "https://source.unsplash.com/1600x900/?"
+        sanitized_keyword = keyword.replace(" ", "+")
+        return f"{base_url}{sanitized_keyword}"
         
 @safe_api_call
 def fetch_image_for_keyword(keyword, GOOGLE_MAPS_API_KEY):
@@ -231,43 +334,51 @@ def fetch_image_for_keyword(keyword, GOOGLE_MAPS_API_KEY):
     try:
         if not keyword:
             return None
+        
+        logging.info(f"Fetching image for keyword: {keyword}")
 
         # Try Google Maps API first
-        gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
+        try:
+            gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 
-        # Search for places related to the keyword
-        places_result = gmaps.places(
-            query=keyword,
-            language="en",
-        )
+            # Search for places related to the keyword
+            places_result = gmaps.places(
+                query=keyword,
+                language="en",
+            )
 
-        # Filter places with photos
-        places_with_photos = [place for place in places_result.get("results", [])
-                             if place.get("photos")]
+            # Filter places with photos
+            places_with_photos = [place for place in places_result.get("results", [])
+                                if place.get("photos")]
 
-        if places_with_photos:
-            # Select a random place with photos
-            selected_place = random.choice(places_with_photos)
+            if places_with_photos:
+                # Select a random place with photos
+                selected_place = random.choice(places_with_photos)
 
-            # Get the photo reference
-            photo_reference = selected_place["photos"][0]["photo_reference"]
+                # Get the photo reference
+                photo_reference = selected_place["photos"][0]["photo_reference"]
 
-            # Build the URL for the photo
-            image_url = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference={photo_reference}&key={GOOGLE_MAPS_API_KEY}"
-            
-            return image_url
+                # Build the URL for the photo
+                image_url = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference={photo_reference}&key={GOOGLE_MAPS_API_KEY}"
+                
+                logging.info(f"Got image from Google Places API")
+                return image_url
+        except Exception as e:
+            logging.warning(f"Google Places image fetch failed: {str(e)}")
+            # Continue to Unsplash
         
-        # Fall back to Unsplash if Google doesn't have photos
-        logger.info(f"No Google Maps photos found for '{keyword}', trying Unsplash")
-        return fetch_unsplash_image(keyword)
+        # Fall back to Unsplash
+        logging.info(f"Falling back to Unsplash for keyword: {keyword}")
+        unsplash_url = fetch_unsplash_image(keyword)
+        if unsplash_url:
+            logging.info(f"Got image from Unsplash")
+            return unsplash_url
+            
+        return None
 
     except Exception as e:
-        logger.error(f"Error fetching image for keyword '{keyword}': {str(e)}")
-        # Try Unsplash as a final fallback
-        try:
-            return fetch_unsplash_image(keyword)
-        except:
-            raise ImageError(f"Could not fetch image for {keyword}", e)
+        logging.error(f"All image fetching methods failed for keyword '{keyword}': {str(e)}")
+        return None
 
 def top_activity_interest_llm(user):
     """
