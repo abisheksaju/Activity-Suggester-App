@@ -107,7 +107,7 @@ def extract_main_keywords(text):
             "dosa", "cooking", "baking", "food", "recipe", "cuisine", "dish",
             "meal", "restaurant", "café", "bakery", "pizza", "burger", "pasta",
             "sushi", "curry", "breakfast", "lunch", "dinner", "snack",
-            "dessert", "coffee", "tea", "smoothie", "cocktail"
+            "dessert", "coffee", "tea", "smoothie", "cocktail", "pasta", "truffles"
         ]
 
         activity_keywords = [
