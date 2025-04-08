@@ -93,59 +93,33 @@ def get_synthetic_user():
         }
     }
 
-def extract_main_keywords(text):
+def extract_keywords_from_prompt(prompt):
     """
-    Extract main keywords from indoor activity description
+    Extract keywords dynamically using OpenAI (or any LLM)
+    Fallback: extract nouns with spaCy or basic split.
     """
     try:
-        # If the text is empty or None, return a generic keyword
-        if not text:
-            return "indoor activity"
-
-        # List of food and activity keywords to look for
-        food_keywords = [
-            "dosa", "cooking", "baking", "food", "recipe", "cuisine", "dish",
-            "meal", "restaurant", "café", "bakery", "pizza", "burger", "pasta",
-            "sushi", "curry", "breakfast", "lunch", "dinner", "snack",
-            "dessert", "coffee", "tea", "smoothie", "cocktail", "pasta", "truffles"
-        ]
-
-        activity_keywords = [
-            "yoga", "meditation", "painting", "drawing", "art", "craft",
-            "reading", "book", "game", "gaming", "movie", "film", "music",
-            "dance", "workout", "exercise", "pottery", "chess", "board game",
-            "puzzle", "knitting", "photography", "baking", "cooking"
-        ]
-
-        # Combine all keywords
-        all_keywords = food_keywords + activity_keywords
-
-        # Convert to lowercase for case-insensitive matching
-        text_lower = text.lower()
-
-        # Find matching keywords
-        matches = []
-        for keyword in all_keywords:
-            if keyword in text_lower:
-                matches.append(keyword)
-
-        # If we found any matches, return the longest one (likely most specific)
-        if matches:
-            return max(matches, key=len)
-
-        # If no specific matches, use regex to find nouns (imperfect but useful fallback)
-        words = re.findall(r'\b[A-Za-z]{4,}\b', text)
-        if words:
-            # Return the longest word as a fallback
-            return max(words, key=len)
-
-        # Last resort
-        return "indoor activity"
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You're a helpful assistant that extracts 2-3 most important keywords from a user prompt, ideally nouns or phrases relevant for image search.",
+                },
+                {"role": "user", "content": f"Extract keywords from: {prompt}"},
+            ],
+            temperature=0.3,
+        )
+        keywords_text = response["choices"][0]["message"]["content"].strip()
+        # Expecting comma-separated string of keywords
+        keywords = [kw.strip() for kw in keywords_text.split(",")]
+        return keywords
 
     except Exception as e:
-        logger.error(f"Error extracting keywords: {str(e)}")
-        return "indoor activity"  # Fallback
-
+        print(f"Keyword extraction failed: {e}")
+        # Fallback: return first 3 significant words
+        return prompt.split()[:3]
+        
 @safe_api_call
 def fetch_image_for_keyword(keyword, GOOGLE_MAPS_API_KEY):
     """
