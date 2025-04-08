@@ -261,7 +261,7 @@ User details:
 
 Now the user has clicked 'Know More'.
 
-Please give a more detailed, engaging, and informative version of the recommendation above. Include 5-6 sentence at most. Add why it's a good fit based on the context, what to expect there, and optionally a fun tip.
+Please give a more detailed, engaging, and informative version of the recommendation above. Include 5-6 sentence at most and show it as bullet points for the user to easily understand. Add why it's a good fit based on the context, what to expect there, and optionally a fun tip.
 """
     response = model.generate_content(prompt)
     return response.text
