@@ -126,31 +126,41 @@ if "recommendation_shown" not in st.session_state or not st.session_state.recomm
                     response = model.generate_content(build_llm_prompt_indoor(user, top_interest, st.session_state.user_feedback))
                     activity_description = response.text.strip()
                     st.session_state.last_short_response = activity_description
-
+            
                     # Extract keywords and fetch related image
-
-                    keywords = extract_keywords_from_prompt(activity_description)
-                    image_url = None
-
                     try:
-                        for kw in keywords:
-                            image_url = get_image_from_keyword(kw)
-                            if image_url:
-                                break
-                    
+                        # Extract keywords
+                        keywords = extract_keywords_from_prompt(activity_description)
+                        image_url = None
+                        
+                        # Try each keyword until we find an image
+                        if keywords:
+                            for keyword in keywords:
+                                try:
+                                    image_url = fetch_image_for_keyword(keyword, st.session_state.GOOGLE_MAPS_API_KEY)
+                                    if image_url:
+                                        main_keyword = keyword  # Store successful keyword
+                                        break
+                                except Exception as e:
+                                    logging.error(f"Error fetching image for '{keyword}': {str(e)}")
+                                    continue
+                                    
                         if not image_url:
-                            image_url = "https://example.com/default-image.jpg"  # Optional fallback
+                            # Fallback to main extraction method if no image found
+                            main_keyword = extract_main_keywords(activity_description)
+                            image_url = fetch_image_for_keyword(main_keyword, st.session_state.GOOGLE_MAPS_API_KEY)
                     except Exception as e:
-                        logging.error(f"Image search error: {str(e)}")
-                        st.session_state.errors.append(f"Couldn't find a related image: {str(e)}")
-
+                        logging.error(f"Error in keyword extraction or image fetching: {str(e)}")
+                        main_keyword = "indoor activity"
+                        image_url = None
+            
                     st.session_state.recommendation_data = {
                         "type": "indoor",
                         "name": f"Indoor {top_interest} Activity",
                         "description": activity_description,
                         "image_url": image_url,  # This might be None if image fetch failed
                         "activity_type": top_interest,
-                        "keyword": main_keyword  # Store the extracted keyword
+                        "keyword": main_keyword if 'main_keyword' in locals() else "indoor activity"
                     }
                 except Exception as e:
                     logging.error(f"Error in indoor flow: {str(e)}")
