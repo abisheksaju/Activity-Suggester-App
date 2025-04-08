@@ -35,7 +35,7 @@ st.markdown("""
         color: gray;
     }
     </style>
-    <div class="custom-title">My Activity Planner</div>
+    <div class="custom-title">My Daily Activity Planner</div>
 """, unsafe_allow_html=True)
 
 # Generate user context if not already in session
