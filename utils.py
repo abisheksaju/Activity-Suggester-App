@@ -15,6 +15,10 @@ import traceback
 import logging
 import re
 from PIL import UnidentifiedImageError
+import openai
+
+# Make sure to set OPENAI_API_KEY in your environment or replace here.
+openai.api_key = os.getenv("OPENAI_API_KEY", "your-default-api-key")
 
 # Set up logging
 logging.basicConfig(
