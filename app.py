@@ -17,6 +17,7 @@ GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 ORS_API_KEY = st.secrets["ORS_API_KEY"]
 
 # Configure Gemini model
+os.environ['GEMINI_API_KEY'] = st.secrets["GEMINI_API_KEY"]
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel("gemini-2.0-flash")
 
