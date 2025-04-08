@@ -188,7 +188,7 @@ if "recommendation_data" in st.session_state:
             # Store feedback to use in next recommendation
             st.session_state.user_feedback = "The user did not like the previous suggestion. Please provide a completely different recommendation."
             st.session_state.recommendation_shown = False
-            st.experimental_rerun()
+            st.rerun()
     
     # Know More button
     if st.button("🔎 Tell me more"):
@@ -247,7 +247,7 @@ with st.sidebar.expander("🔄 Reset Options"):
                 del st.session_state.recommendation_shown
             if "recommendation_data" in st.session_state:
                 del st.session_state.recommendation_data
-            st.experimental_rerun()
+            st.rerun()
             
     with col2:
         if st.button("Reset All"):
@@ -255,7 +255,7 @@ with st.sidebar.expander("🔄 Reset Options"):
             for key in list(st.session_state.keys()):
                 if key != "initialized" and key not in ["GOOGLE_MAPS_API_KEY", "model", "ors_client", "gmaps_client"]:
                     del st.session_state[key]
-            st.experimental_rerun()
+            st.rerun()
 
 # Footer
 st.sidebar.markdown("---")
