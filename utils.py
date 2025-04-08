@@ -218,7 +218,7 @@ Here are some options nearby:
 
     prompt += """
 Based on this context, choose the best one and explain why it's a good fit right now.
-Make your response 1-2 short, fun, personal sentences that could show up on a phone lockscreen.
+Make your response in 1-2 short, fun, personal sentences that could show up on a phone lockscreen. Do not give any other output other than why this place is the best for now.
 """
 
     try:
@@ -259,7 +259,7 @@ User details:
 
 Now the user has clicked 'Know More'.
 
-Please give a more detailed, engaging, and informative version of the recommendation above. Include 2–3 paragraphs at most. Add why it's a good fit based on the context, what to expect there, and optionally a fun tip.
+Please give a more detailed, engaging, and informative version of the recommendation above. Include 5-6 sentence at most. Add why it's a good fit based on the context, what to expect there, and optionally a fun tip.
 """
     response = model.generate_content(prompt)
     return response.text
