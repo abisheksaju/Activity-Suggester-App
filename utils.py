@@ -91,8 +91,8 @@ def get_synthetic_user():
             {"event": "Office Meeting", "start": "4 PM", "end": "6:30 PM"}
         ],
         "interests": {
-            "travel": 0.93,
-            "food": 0.81,
+            "travel": 0.81,
+            "food": 0.93,
             "news": 0.65,
             "shopping": 0.48,
             "gaming": 0.76
