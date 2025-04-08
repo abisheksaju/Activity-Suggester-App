@@ -276,79 +276,81 @@ def extract_nouns(text):
 @safe_api_call
 def fetch_unsplash_image(keyword):
     """
-    Fetch an image from Unsplash API for a given keyword with improved fallbacks
+    Fetch an image from Unsplash API for a given keyword with improved reliability
     """
     try:
         # Check if we have an Unsplash API key in the environment or secrets
-        UNSPLASH_ACCESS_KEY = os.environ.get("UNSPLASH_ACCESS_KEY") or st.secrets.get("UNSPLASH_ACCESS_KEY", None)
+        access_key = os.environ.get("UNSPLASH_ACCESS_KEY") or st.secrets.get("UNSPLASH_ACCESS_KEY", UNSPLASH_ACCESS_KEY)
         
         # Simplify the keyword to improve hit rate
         original_keyword = keyword
         simplified_keyword = simplify_keyword(keyword)
+        core_keyword = extract_core_keyword(keyword)
         
-        if not UNSPLASH_ACCESS_KEY:
-            logger.warning("No Unsplash API key found, falling back to public URL")
-            # Fallback to no-API method if no key available
-            base_url = "https://source.unsplash.com/1600x900/?"
-            sanitized_keyword = simplified_keyword.replace(" ", "+")
-            return f"{base_url}{sanitized_keyword}"
+        # List of keywords to try, in order of specificity
+        keywords_to_try = [
+            simplified_keyword,
+            core_keyword,
+            # Add some category-specific generic terms
+            f"{core_keyword} activity",
+            original_keyword
+        ]
         
-        # Use the official Unsplash API
-        response = requests.get(
-            "https://api.unsplash.com/search/photos",
-            params={
-                "query": simplified_keyword,
-                "client_id": UNSPLASH_ACCESS_KEY,
-                "per_page": 1
-            }
-        )
+        # Remove duplicates while preserving order
+        unique_keywords = []
+        for kw in keywords_to_try:
+            if kw and kw not in unique_keywords:
+                unique_keywords.append(kw)
         
-        if response.status_code == 200:
-            data = response.json()
-            if data["results"] and len(data["results"]) > 0:
-                # Return the small or regular sized image URL
-                return data["results"][0]["urls"]["regular"]
-            else:
-                logger.warning(f"No Unsplash results for keyword: {simplified_keyword}")
-                # Try with even more simplified keyword
-                core_keyword = extract_core_keyword(original_keyword)
-                if core_keyword != simplified_keyword:
-                    logger.info(f"Trying with core keyword: {core_keyword}")
-                    try:
-                        response = requests.get(
-                            "https://api.unsplash.com/search/photos",
-                            params={
-                                "query": core_keyword,
-                                "client_id": UNSPLASH_ACCESS_KEY,
-                                "per_page": 1
-                            }
-                        )
-                        if response.status_code == 200:
-                            data = response.json()
-                            if data["results"] and len(data["results"]) > 0:
-                                return data["results"][0]["urls"]["regular"]
-                    except Exception as e:
-                        logger.warning(f"Error with core keyword attempt: {str(e)}")
+        # Log the keywords we'll try
+        logging.info(f"Trying Unsplash with keywords: {unique_keywords}")
+        
+        # Try each keyword with the API method first
+        if access_key:
+            for kw in unique_keywords:
+                try:
+                    response = requests.get(
+                        "https://api.unsplash.com/search/photos",
+                        params={
+                            "query": kw,
+                            "client_id": access_key,
+                            "per_page": 3
+                        }
+                    )
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        if data["results"] and len(data["results"]) > 0:
+                            # Return the regular sized image URL
+                            image_url = data["results"][0]["urls"]["regular"]
+                            logging.info(f"Found Unsplash image with API for '{kw}'")
+                            return image_url
+                except Exception as api_err:
+                    logging.warning(f"API method failed for '{kw}': {api_err}")
+                    continue
+        
+        # Fall back to the direct URL method which is more reliable
+        for kw in unique_keywords:
+            try:
+                sanitized_keyword = kw.replace(" ", "+")
+                direct_url = f"https://source.unsplash.com/1600x900/?{sanitized_keyword}"
                 
-                # Fall back to the public URL method with simplified keyword
-                base_url = "https://source.unsplash.com/1600x900/?"
-                sanitized_keyword = core_keyword.replace(" ", "+")
-                return f"{base_url}{sanitized_keyword}"
-        else:
-            logger.warning(f"Unsplash API error: {response.status_code}")
-            # Fall back to the public URL method
-            core_keyword = extract_core_keyword(original_keyword)
-            base_url = "https://source.unsplash.com/1600x900/?"
-            sanitized_keyword = core_keyword.replace(" ", "+")
-            return f"{base_url}{sanitized_keyword}"
+                # Check if URL returns a valid image
+                response = requests.head(direct_url, allow_redirects=True)
+                if response.status_code == 200:
+                    logging.info(f"Found Unsplash image with direct URL for '{kw}'")
+                    return direct_url
+            except Exception as direct_err:
+                logging.warning(f"Direct URL method failed for '{kw}': {direct_err}")
+                continue
+        
+        # Final fallback to a very generic term
+        return "https://source.unsplash.com/1600x900/?activity"
             
     except Exception as e:
-        logger.error(f"Error fetching Unsplash image for '{keyword}': {str(e)}")
-        # Final fallback
-        core_keyword = extract_core_keyword(keyword)
-        base_url = "https://source.unsplash.com/1600x900/?"
-        sanitized_keyword = core_keyword.replace(" ", "+")
-        return f"{base_url}{sanitized_keyword}"
+        logger.error(f"All Unsplash methods failed for '{keyword}': {str(e)}")
+        # Ultimate fallback
+        return "https://source.unsplash.com/1600x900/?activity"
 
 def simplify_keyword(keyword):
     """
