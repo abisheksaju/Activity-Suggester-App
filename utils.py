@@ -92,7 +92,8 @@ Time: {user_context['current_time']}
 Free time available: {user_context['free_hours']} hours
 Location: {user_context['location']['city']}
 
-Suggest a single interesting indoor activity that suits the user's interest and context. Make it personal, fun, and specific to {top_interest}. Make the output 1–2 in short, fun, personal sentences that could show up on a phone lockscreen. Do not give any other output other than that.
+Based on the user's interest, weather, current time suggest a single interesting indoor activity that suits the user's interest and context. Make it personal, fun, and specific to {top_interest}. Make the output 1–2 in short, fun, personal sentences that could show up on a phone lockscreen. Do not give any other output other than that.
+Make sure that the acitvity is corresponding to the current location
 """
     return prompt
 
@@ -200,9 +201,10 @@ def choose_place(user, places, model, user_feedback=None):
     
     # Create a prompt with summaries of the place options
     prompt = f"""
-{feedback_note}You're a helpful assistant helping a user decide what to do next.
+{feedback_note}You are a personalized activity planner. Below is information about the user:
 
 User preferences:
+- Current Location: {user.get("city")}
 - Weather: {user.get("weather")}
 - Time: {user.get("current_time")}
 - Top interest: {st.session_state.top_interest}
@@ -217,8 +219,8 @@ Here are some options nearby:
         prompt += f"Round trip travel time: {place['travel_time_mins']} minutes. "
 
     prompt += """
-Based on this context, choose the best one and explain why it's a good fit right now.
-Make your response in 1-2 short, fun, personal sentences that could show up on a phone lockscreen. Do not give any other output other than why this place is the best for now.
+Based on the user's interest, weather, current time, travel time, opening hours, and available free time, suggest the *single best* place to visit now. Also include a friendly message with the recommendation. Include only one suggestion and mention the image corresponds to it.
+Make the output 1–2 short, fun, personal sentences that could show up on a phone lockscreen. Do not give any other output other than why this place is the best for now.
 """
 
     try:
