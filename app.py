@@ -128,12 +128,18 @@ if "recommendation_shown" not in st.session_state or not st.session_state.recomm
                     st.session_state.last_short_response = activity_description
 
                     # Extract keywords and fetch related image
-                    main_keyword = extract_main_keywords(activity_description)
+
+                    keywords = extract_keywords_from_prompt(activity_description)
                     image_url = None
 
                     try:
-                        if main_keyword:
-                            image_url = fetch_image_for_keyword(main_keyword, st.session_state.GOOGLE_MAPS_API_KEY)
+                        for kw in keywords:
+                            image_url = get_image_from_keyword(kw)
+                            if image_url:
+                                break
+                    
+                        if not image_url:
+                            image_url = "https://example.com/default-image.jpg"  # Optional fallback
                     except Exception as e:
                         logging.error(f"Image search error: {str(e)}")
                         st.session_state.errors.append(f"Couldn't find a related image: {str(e)}")
