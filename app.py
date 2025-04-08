@@ -161,7 +161,7 @@ if "recommendation_data" in st.session_state:
             # Store feedback to use in next recommendation
             st.session_state.user_feedback = "The user did not like the previous suggestion. Please provide a completely different recommendation."
             st.session_state.recommendation_shown = False
-            st.experimental_rerun()
+            st.rerun()
     
     # Know More button
     if st.button("🔎 Tell me more"):
