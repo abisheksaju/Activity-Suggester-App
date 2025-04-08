@@ -21,8 +21,23 @@ os.environ['GEMINI_API_KEY'] = st.secrets["GEMINI_API_KEY"]
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel("gemini-2.0-flash")
 
+import streamlit as st
+
 st.set_page_config(page_title="Activity Suggester", layout="centered")
-st.title("🎯 Activity Suggester App")
+# Inject custom CSS to position the title at the top-right
+st.markdown("""
+    <style>
+    .custom-title {
+        position: absolute;
+        top: 10px;
+        right: 20px;
+        font-size: 14px;
+        color: gray;
+    }
+    </style>
+    <div class="custom-title">MeTime Genie</div>
+""", unsafe_allow_html=True)
+st.title("MeTime Genie")
 
 # Generate user context if not already in session
 if "user" not in st.session_state:
