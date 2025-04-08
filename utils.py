@@ -93,6 +93,59 @@ def get_synthetic_user():
         }
     }
 
+def extract_main_keywords(text):
+    """
+    Extract main keywords from indoor activity description
+    """
+    try:
+        # If the text is empty or None, return a generic keyword
+        if not text:
+            return "indoor activity"
+
+        # List of food and activity keywords to look for
+        food_keywords = [
+            "dosa", "cooking", "baking", "food", "recipe", "cuisine", "dish",
+            "meal", "restaurant", "café", "bakery", "pizza", "burger", "pasta",
+            "sushi", "curry", "breakfast", "lunch", "dinner", "snack",
+            "dessert", "coffee", "tea", "smoothie", "cocktail", "pasta", "truffles"
+        ]
+
+        activity_keywords = [
+            "yoga", "meditation", "painting", "drawing", "art", "craft",
+            "reading", "book", "game", "gaming", "movie", "film", "music",
+            "dance", "workout", "exercise", "pottery", "chess", "board game",
+            "puzzle", "knitting", "photography", "baking", "cooking"
+        ]
+
+        # Combine all keywords
+        all_keywords = food_keywords + activity_keywords
+
+        # Convert to lowercase for case-insensitive matching
+        text_lower = text.lower()
+
+        # Find matching keywords
+        matches = []
+        for keyword in all_keywords:
+            if keyword in text_lower:
+                matches.append(keyword)
+
+        # If we found any matches, return the longest one (likely most specific)
+        if matches:
+            return max(matches, key=len)
+
+        # If no specific matches, use regex to find nouns (imperfect but useful fallback)
+        words = re.findall(r'\b[A-Za-z]{4,}\b', text)
+        if words:
+            # Return the longest word as a fallback
+            return max(words, key=len)
+
+        # Last resort
+        return "indoor activity"
+
+    except Exception as e:
+        logger.error(f"Error extracting keywords: {str(e)}")
+        return "indoor activity"  # Fallback
+
 def extract_keywords_from_prompt(prompt):
     """
     Extract keywords dynamically using OpenAI (or any LLM)
