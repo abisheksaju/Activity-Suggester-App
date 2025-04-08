@@ -17,7 +17,7 @@ import re
 from PIL import UnidentifiedImageError
 import openai
 
-openai.api_key = "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"
+#openai.api_key = "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"
 
 # Make sure to set OPENAI_API_KEY in your environment or replace here.
 #openai.api_key = os.getenv("OPENAI_API_KEY", "your-default-api-key")
@@ -93,8 +93,8 @@ def get_synthetic_user():
             {"event": "Office Meeting", "start": "4 PM", "end": "6:30 PM"}
         ],
         "interests": {
-            "travel": 0.81,
-            "food": 0.93,
+            "travel": 0.93,
+            "food": 0.81,
             "news": 0.65,
             "shopping": 0.48,
             "gaming": 0.76
