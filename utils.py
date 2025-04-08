@@ -7,6 +7,8 @@ import requests
 import streamlit as st
 import google.generativeai as genai
 import os
+import json
+from pathlib import Path
 
 # Set up clients
 def init_clients(openroute_api_key, google_maps_api_key):
@@ -35,14 +37,166 @@ def get_synthetic_user():
             "travel": 0.93,
             "food": 0.81,
             "news": 0.65,
-            "shopping": 0.58,
+            "shopping": 0.48,
             "gaming": 0.76
         }
     }
 
+# User personalization database functions
+def get_user_preferences_db():
+    """Get the user preferences database, or create it if it doesn't exist"""
+    if "user_preferences" not in st.session_state:
+        # In a real app, this would load from a database or file
+        st.session_state.user_preferences = {
+            "liked_places": [],
+            "disliked_places": [],
+            "interest_adjustments": {},
+            "viewed_details": [],
+            "category_preferences": {},
+            "feedback_history": []
+        }
+    return st.session_state.user_preferences
+
+def update_preferences_from_feedback(preference_type, item_data):
+    """Update the user preferences database based on feedback"""
+    prefs = get_user_preferences_db()
+    
+    timestamp = datetime.datetime.now().isoformat()
+    
+    if preference_type == "like":
+        # Add to liked places
+        prefs["liked_places"].append({
+            "name": item_data.get("name", "Unknown"),
+            "type": item_data.get("type", "Unknown"),
+            "timestamp": timestamp
+        })
+        
+        # Update category preference
+        category = item_data.get("type", "unknown")
+        if category in prefs["category_preferences"]:
+            prefs["category_preferences"][category] += 1
+        else:
+            prefs["category_preferences"][category] = 1
+            
+    elif preference_type == "dislike":
+        # Add to disliked places
+        prefs["disliked_places"].append({
+            "name": item_data.get("name", "Unknown"),
+            "type": item_data.get("type", "Unknown"),
+            "timestamp": timestamp
+        })
+        
+        # Decrease category preference
+        category = item_data.get("type", "unknown")
+        if category in prefs["category_preferences"]:
+            prefs["category_preferences"][category] -= 0.5
+        else:
+            prefs["category_preferences"][category] = -0.5
+    
+    elif preference_type == "view_details":
+        # Track when user views details (shows higher interest)
+        prefs["viewed_details"].append({
+            "name": item_data.get("name", "Unknown"),
+            "type": item_data.get("type", "Unknown"),
+            "timestamp": timestamp
+        })
+        
+        # Slightly increase category preference
+        category = item_data.get("type", "unknown")
+        if category in prefs["category_preferences"]:
+            prefs["category_preferences"][category] += 0.2
+        else:
+            prefs["category_preferences"][category] = 0.2
+    
+    # Add to general feedback history
+    prefs["feedback_history"].append({
+        "type": preference_type,
+        "item": item_data.get("name", "Unknown"),
+        "category": item_data.get("type", "Unknown"),
+        "timestamp": timestamp
+    })
+    
+    # Calculate interest adjustments based on feedback history
+    calculate_interest_adjustments(prefs)
+    
+    return prefs
+
+def calculate_interest_adjustments(prefs):
+    """Calculate interest adjustments based on user feedback"""
+    # Count feedback by category
+    category_counts = {}
+    for feedback in prefs["feedback_history"]:
+        category = feedback["category"]
+        feedback_type = feedback["type"]
+        
+        if category not in category_counts:
+            category_counts[category] = {"like": 0, "dislike": 0, "view_details": 0}
+            
+        if feedback_type in category_counts[category]:
+            category_counts[category][feedback_type] += 1
+    
+    # Calculate adjustments
+    adjustments = {}
+    for category, counts in category_counts.items():
+        # Simple formula: likes + (views * 0.3) - dislikes
+        score = counts.get("like", 0) + (counts.get("view_details", 0) * 0.3) - counts.get("dislike", 0)
+        adjustments[category] = min(max(score * 0.1, -0.5), 0.5)  # Limit adjustment between -0.5 and 0.5
+    
+    prefs["interest_adjustments"] = adjustments
+
+def get_adjusted_interests(user):
+    """Get user interests adjusted by feedback"""
+    interests = user.get("interests", {}).copy()
+    prefs = get_user_preferences_db()
+    adjustments = prefs.get("interest_adjustments", {})
+    
+    # Apply adjustments
+    for category, adjustment in adjustments.items():
+        if category in interests:
+            interests[category] = min(max(interests[category] + adjustment, 0), 1)  # Keep between 0 and 1
+    
+    return interests
+
+# Personalized recommendation context building
+def build_personalized_context(user, top_interest):
+    """Build a personalized context based on user feedback history"""
+    prefs = get_user_preferences_db()
+    
+    # Get recent likes and dislikes
+    recent_likes = prefs["liked_places"][-3:] if prefs["liked_places"] else []
+    recent_dislikes = prefs["disliked_places"][-3:] if prefs["disliked_places"] else []
+    
+    likes_text = ""
+    if recent_likes:
+        likes_text = "Recent likes: " + ", ".join([like["name"] for like in recent_likes])
+    
+    dislikes_text = ""
+    if recent_dislikes:
+        dislikes_text = "Recent dislikes: " + ", ".join([dislike["name"] for dislike in recent_dislikes])
+    
+    # Get category preferences
+    category_prefs = prefs["category_preferences"]
+    categories_text = ""
+    if category_prefs:
+        sorted_categories = sorted(category_prefs.items(), key=lambda x: x[1], reverse=True)
+        categories_text = "Category preferences: " + ", ".join([f"{cat} ({score})" for cat, score in sorted_categories])
+    
+    # Build context
+    context = f"""
+Based on the user's history:
+{likes_text}
+{dislikes_text}
+{categories_text}
+"""
+    return context.strip()
+
 # LLM Call 1 to fetch the top interest
 def top_activity_interest_llm(user_context):
     model = st.session_state.model
+    
+    # Get adjusted interests based on feedback
+    adjusted_interests = get_adjusted_interests(user_context)
+    
     prompt = f"""
     You are a smart assistant that ranks user interests in the context of the moment.
 
@@ -51,7 +205,7 @@ def top_activity_interest_llm(user_context):
     - Weather: {user_context['weather']}
     - Current Time: {user_context['current_time']}
     - Free Hours: {user_context['free_hours']}
-    - Interests (with scores): {user_context['interests']}
+    - Interests (with scores): {adjusted_interests}
 
     Based on this context, rank the categories from most to least relevant **for recommending an activity right now**.
 
@@ -70,6 +224,9 @@ def top_activity_interest_llm(user_context):
 
 # LLM Call for Indoor or Outdoor Activity
 def build_llm_decision_prompt(user_context, top_interest):
+    # Add personalized context
+    personalized_context = build_personalized_context(user_context, top_interest)
+    
     return f"""
 You are a smart activity recommender. Given the user's details below, decide whether to suggest an outdoor place or an indoor activity:
 - Interest: {top_interest}
@@ -78,11 +235,16 @@ You are a smart activity recommender. Given the user's details below, decide whe
 - Location: {user_context['location']['city']}
 - Free hours: {user_context['free_hours']}
 
+{personalized_context}
+
 Reply with only one word: 'indoor' or 'outdoor'."""
 
 # LLM Prompt for Indoor Activity
 def build_llm_prompt_indoor(user_context, top_interest, user_feedback=None):
     feedback_note = "" if not user_feedback else f"{user_feedback} "
+    
+    # Add personalized context
+    personalized_context = build_personalized_context(user_context, top_interest)
     
     prompt = f"""
 {feedback_note}You are a personalized indoor activity planner.
@@ -91,6 +253,9 @@ Current weather: {user_context['weather']}
 Time: {user_context['current_time']}
 Free time available: {user_context['free_hours']} hours
 Location: {user_context['location']['city']}
+
+User History and Preferences:
+{personalized_context}
 
 Suggest a single interesting indoor activity that suits the user's interest and context. Make it personal, fun, and specific to {top_interest}. Make the output 1–2 short, fun, personal sentences that could show up on a phone lockscreen.
 """
@@ -128,10 +293,17 @@ def fetch_places(user, top_interest, GOOGLE_MAPS_API_KEY):
             open_now=True
         )
         
-        # Filter places with photos and good ratings
+        # Get list of disliked places to avoid
+        prefs = get_user_preferences_db()
+        disliked_places = [item["name"].lower() for item in prefs["disliked_places"]]
+        
+        # Filter places with photos and good ratings, avoiding disliked places
         filtered_places = []
         for place in places_result.get("results", []):
-            if place.get("photos") and place.get("user_ratings_total", 0) >= 20:
+            if (place.get("photos") and 
+                place.get("user_ratings_total", 0) >= 20 and
+                place.get("name", "").lower() not in disliked_places):
+                place["type"] = top_interest  # Add type for tracking preferences
                 filtered_places.append(place)
             if len(filtered_places) >= 5:
                 break
@@ -176,6 +348,9 @@ def choose_place(user, places, model, user_feedback=None):
     lon = user['location']['lon']
     ors_client = st.session_state.ors_client
     
+    # Get personalized context
+    personalized_context = build_personalized_context(user, st.session_state.top_interest)
+    
     for idx, place in enumerate(places[:3]):  # Limit to top 3 for brevity
         place_lat = place['geometry']['location']['lat']
         place_lon = place['geometry']['location']['lng']
@@ -192,7 +367,8 @@ def choose_place(user, places, model, user_feedback=None):
             "rating": place.get("rating", "N/A"),
             "total_ratings": place.get("user_ratings_total", 0),
             "address": place.get("vicinity", "Unknown location"),
-            "travel_time_mins": travel_time_mins
+            "travel_time_mins": travel_time_mins,
+            "type": place.get("type", st.session_state.top_interest)
         })
 
     # Include user feedback in the prompt if available
@@ -208,6 +384,9 @@ User preferences:
 - Top interest: {st.session_state.top_interest}
 - Free hours: {user.get("free_hours")}
 
+User History and Preferences:
+{personalized_context}
+
 Here are some options nearby:
 """
 
@@ -217,7 +396,7 @@ Here are some options nearby:
         prompt += f"Round trip travel time: {place['travel_time_mins']} minutes. "
 
     prompt += """
-Based on this context, choose the best one and explain why it's a good fit right now.
+Based on this context and the user's preferences history, choose the best one and explain why it's a good fit right now.
 Make your response 1-2 short, fun, personal sentences that could show up on a phone lockscreen.
 """
 
@@ -231,19 +410,25 @@ Make your response 1-2 short, fun, personal sentences that could show up on a ph
             for place in places:
                 if place.get("place_id") != st.session_state.previous_place_id:
                     st.session_state.previous_place_id = place.get("place_id")
+                    # Add enrichment data
+                    place.update({"description": description})
                     return place, description
         
         # Store the selected place ID for future reference
         if places and len(places) > 0:
             st.session_state.previous_place_id = places[0].get("place_id")
-            
-        return places[0], description
+            # Add enrichment data
+            places[0].update({"description": description})
+            return places[0], description
     except Exception as e:
         st.error(f"Error generating place suggestion: {e}")
         return None, "Sorry, we had trouble generating a suggestion."
 
 # Generate detailed suggestion using LLM
 def get_detailed_suggestion(user, model, last_short_response, top_interest):
+    # Add personalized context
+    personalized_context = build_personalized_context(user, top_interest)
+    
     prompt = f"""
 You are a helpful assistant.
 
@@ -256,6 +441,9 @@ User details:
 - Weather: {user['weather']}
 - Time: {user['current_time']}
 - Free time available: {user['free_hours']} hours
+
+User History and Preferences:
+{personalized_context}
 
 Now the user has clicked 'Know More'.
 
