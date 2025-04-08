@@ -1,4 +1,4 @@
-# This code should be placed at the beginning of utils.py, before any other functions
+# This is the complete utils.py file
 
 import datetime
 import random
@@ -60,6 +60,38 @@ def safe_api_call(func):
             logger.error(traceback.format_exc())
             raise APIError(error_msg, api_name, e)
     return wrapper
+
+# Set up clients
+def init_clients(openroute_api_key, google_maps_api_key):
+    ors_client = openrouteservice.Client(key=openroute_api_key)
+    gmaps_client = googlemaps.Client(key=google_maps_api_key)
+    return ors_client, gmaps_client
+
+# Generate synthetic user context
+def get_synthetic_user():
+    # This is a placeholder function that returns synthetic user data
+    # In a real app, you would get this data from the user's actual context
+    return {
+        "location": {
+            "city": "Bangalore",
+            "lat": 12.9716,
+            "lon": 77.5946
+        },
+        "weather": "Cloudy",
+        "current_time": "Saturday 3 PM",
+        "free_hours": 4,
+        "calendar": [
+            {"event": "Lunch with friend", "start": "1 PM", "end": "2 PM"},
+            {"event": "Office Meeting", "start": "4 PM", "end": "6:30 PM"}
+        ],
+        "interests": {
+            "travel": 0.93,
+            "food": 0.81,
+            "news": 0.65,
+            "shopping": 0.48,
+            "gaming": 0.76
+        }
+    }
 
 def extract_main_keywords(text):
     """
@@ -154,83 +186,285 @@ def fetch_image_for_keyword(keyword, GOOGLE_MAPS_API_KEY):
         logger.error(f"Error fetching image for keyword '{keyword}': {str(e)}")
         raise ImageError(f"Could not fetch image for {keyword}", e)
 
-# Function to cleanly update app.py to work with the new utils.py
-def create_app_update_instructions():
+def top_activity_interest_llm(user):
     """
-    This function is just documentation to explain how to update app.py
+    Use LLM to determine what activity would most interest the user right now
     """
-    return """
-    To update app.py to work with the new utils.py:
+    try:
+        # For the MVP version we'll just use the top interest from the user profile
+        if user and "interests" in user:
+            interests = user["interests"]
+            # Return the highest-scoring interest
+            if interests:
+                top_interest = max(interests.items(), key=lambda x: x[1])[0]
+                return top_interest
+        return "food"  # Default fallback
+    except Exception as e:
+        logger.error(f"Error determining top interest: {str(e)}")
+        return "food"  # Default fallback
 
-    1. Keep the original imports but add the new ones:
-       ```python
-       from utils import (
-           get_synthetic_user,
-           top_activity_interest_llm,
-           build_llm_decision_prompt,
-           build_llm_prompt_indoor,
-           fetch_places,
-           fetch_place_image,
-           choose_place,
-           get_detailed_suggestion,
-           init_clients,
-           update_preferences_from_feedback,
-           get_user_preferences_db,
-           extract_main_keywords,  # New import
-           fetch_image_for_keyword,  # New import
-           AppError, APIError, LLMError, ImageError  # New error classes
-       )
-       import logging
-       import traceback
-       ```
-
-    2. Add error handling setup at the start of the app
-       ```python
-       # Set up error handling in the app
-       if "errors" not in st.session_state:
-           st.session_state.errors = []
-       ```
-
-    3. Update the recommendation section with try/except blocks
-
-    4. Add the error display at the bottom of the app
+def build_llm_decision_prompt(user, top_interest):
     """
+    Build a prompt to decide between indoor and outdoor activity
+    """
+    weather = user.get("weather", "Unknown")
+    time = user.get("current_time", "Unknown")
+    
+    prompt = f"""
+    Based on this context, decide if I should suggest an indoor or outdoor activity.
+    Just respond with "indoor" or "outdoor".
+    
+    User context:
+    - Current weather: {weather}
+    - Current time: {time}
+    - Their top interest: {top_interest}
+    - Free hours: {user.get("free_hours", "Unknown")}
+    
+    Consider:
+    - If it's late evening, raining, or very hot, indoor might be better
+    - If it's morning or daytime with good weather, outdoor might be better
+    - Also consider the interest - some activities like gaming are typically indoor
+    """
+    return prompt.strip()
 
-# Ensure the original functions remain in utils.py
-# (These functions should already exist in your utils.py)
-# Set up clients
-def init_clients(openroute_api_key, google_maps_api_key):
-    ors_client = openrouteservice.Client(key=openroute_api_key)
-    gmaps_client = googlemaps.Client(key=google_maps_api_key)
-    return ors_client, gmaps_client
+def build_llm_prompt_indoor(user, top_interest, user_feedback=None):
+    """
+    Build a prompt for indoor activity suggestion
+    """
+    # Include user feedback if available
+    feedback_note = "" if not user_feedback else f"{user_feedback} "
+    
+    prompt = f"""
+    {feedback_note}Suggest a specific indoor activity related to {top_interest} that I can do at home or nearby.
+    
+    My context:
+    - Current time: {user.get("current_time", "Unknown")}
+    - I have {user.get("free_hours", "Unknown")} free hours
+    - My top interest right now: {top_interest}
+    
+    Make your response 1-2 short, fun, personal sentences that help me decide what to do right now.
+    Be specific and practical. Recommend something realistic, not generic.
+    """
+    return prompt.strip()
 
-# Generate synthetic user context
-def get_synthetic_user():
-    # This is a placeholder function that returns synthetic user data
-    # In a real app, you would get this data from the user's actual context
-    return {
-        "location": {
-            "city": "Bangalore",
-            "lat": 12.9716,
-            "lon": 77.5946
-        },
-        "weather": "Cloudy",
-        "current_time": "Saturday 3 PM",
-        "free_hours": 4,
-        "calendar": [
-            {"event": "Lunch with friend", "start": "1 PM", "end": "2 PM"},
-            {"event": "Office Meeting", "start": "4 PM", "end": "6:30 PM"}
-        ],
-        "interests": {
-            "travel": 0.93,
-            "food": 0.81,
-            "news": 0.65,
-            "shopping": 0.48,
-            "gaming": 0.76
+@safe_api_call
+def fetch_places(user, interest_type, api_key):
+    """
+    Fetch places from Google Maps Places API based on user context and interest
+    """
+    try:
+        gmaps = googlemaps.Client(key=api_key)
+        
+        # Get location from user
+        lat = user.get('location', {}).get('lat')
+        lon = user.get('location', {}).get('lon')
+        
+        if not lat or not lon:
+            logger.warning("Missing user location coordinates")
+            return []
+        
+        # Map interest types to Google Maps place types
+        place_type_mapping = {
+            'food': 'restaurant',
+            'shopping': 'shopping_mall',
+            'travel': 'tourist_attraction',
+            'news': 'library',
+            'gaming': 'amusement_park'
         }
-    }
+        
+        # Get place type from interest
+        place_type = place_type_mapping.get(interest_type, 'point_of_interest')
+        
+        # Search for places
+        places_result = gmaps.places_nearby(
+            location=(lat, lon),
+            radius=3000,  # 3km radius
+            type=place_type,
+            open_now=True
+        )
+        
+        return places_result.get('results', [])
+    except Exception as e:
+        logger.error(f"Error fetching places: {str(e)}")
+        return []
 
-# Do not remove the original functions, only add the new ones
+def build_personalized_context(user, top_interest):
+    """
+    Build personalized context string based on user preferences
+    """
+    try:
+        # Get user preferences from database (or default to empty)
+        prefs = get_user_preferences_db()
+        
+        context = []
+        
+        # Add information about category preferences
+        if prefs["category_preferences"]:
+            top_categories = sorted(
+                prefs["category_preferences"].items(), 
+                key=lambda x: x[1], 
+                reverse=True
+            )[:3]
+            
+            categories_text = ", ".join([f"{cat} ({score:.1f})" for cat, score in top_categories])
+            context.append(f"Top categories: {categories_text}")
+        
+        # Add information about liked places
+        if prefs["liked_places"]:
+            recent_likes = [item['name'] for item in prefs["liked_places"][-3:]]
+            context.append(f"Recently liked: {', '.join(recent_likes)}")
+        
+        # Add information about disliked places
+        if prefs["disliked_places"]:
+            recent_dislikes = [item['name'] for item in prefs["disliked_places"][-3:]]
+            context.append(f"Recently disliked: {', '.join(recent_dislikes)}")
+        
+        # Return the combined context
+        if context:
+            return "\n- " + "\n- ".join(context)
+        return "No preference history available."
+    except Exception as e:
+        logger.error(f"Error building personalized context: {str(e)}")
+        return "No preference history available."
+
+@safe_api_call
+def get_route_duration(origin, destination, ors_client):
+    """
+    Get the route duration between two points using OpenRouteService
+    Returns time in minutes
+    """
+    try:
+        # Make sure coordinates are valid
+        if not all(origin) or not all(destination):
+            return None
+        
+        # Request route from ORS API
+        route = ors_client.directions(
+            coordinates=[origin, destination],
+            profile='driving-car',
+            format='geojson'
+        )
+        
+        # Extract duration in seconds and convert to minutes
+        if route and 'features' in route and len(route['features']) > 0:
+            duration_seconds = route['features'][0]['properties']['summary']['duration']
+            return round(duration_seconds / 60)  # Convert to minutes
+        
+        return None
+    except Exception as e:
+        logger.error(f"Error getting route duration: {str(e)}")
+        return None
+
+@safe_api_call
+def fetch_place_image(place, api_key):
+    """
+    Fetch an image for a place using Google Places API
+    """
+    try:
+        if not place or 'photos' not in place or not place['photos']:
+            return None
+        
+        # Get the photo reference
+        photo_reference = place['photos'][0]['photo_reference']
+        
+        # Build the URL for the photo
+        image_url = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference={photo_reference}&key={api_key}"
+        
+        return image_url
+    except Exception as e:
+        logger.error(f"Error fetching place image: {str(e)}")
+        return None
+
+def get_detailed_suggestion(user, model, short_description, interest_type):
+    """
+    Get detailed information about a suggestion
+    """
+    try:
+        prompt = f"""
+        Please provide more detailed information about this activity suggestion:
+        "{short_description}"
+        
+        The user's main interest is: {interest_type}
+        Current time: {user.get("current_time", "Unknown")}
+        Free hours: {user.get("free_hours", "Unknown")}
+        
+        Provide 3-4 paragraphs with:
+        1. More details about this specific activity
+        2. Why it's a good fit for the user now
+        3. Specific things to look for or enjoy
+        
+        Be specific, practical and personal. Make it sound exciting but realistic.
+        """
+        
+        response = model.generate_content(prompt)
+        return response.text.strip()
+    except Exception as e:
+        logger.error(f"Error getting detailed suggestion: {str(e)}")
+        return "I'm sorry, I couldn't generate additional details right now."
+
+# User preferences functions
+def get_user_preferences_db():
+    """
+    Get user preferences from "database" (session state in this MVP)
+    """
+    if "user_preferences" not in st.session_state:
+        st.session_state.user_preferences = {
+            "category_preferences": {
+                "food": 0.5,
+                "travel": 0.5,
+                "shopping": 0.5,
+                "gaming": 0.5,
+                "news": 0.5
+            },
+            "liked_places": [],
+            "disliked_places": []
+        }
+    
+    return st.session_state.user_preferences
+
+def update_preferences_from_feedback(feedback_type, item_data):
+    """
+    Update user preferences based on feedback
+    """
+    prefs = get_user_preferences_db()
+    
+    # Add to liked or disliked places
+    if feedback_type == "like":
+        prefs["liked_places"].append(item_data)
+        
+        # Increase category preference
+        category = item_data.get("type", "")
+        if category in prefs["category_preferences"]:
+            prefs["category_preferences"][category] = min(
+                1.0, prefs["category_preferences"][category] + 0.1
+            )
+            
+    elif feedback_type == "dislike":
+        prefs["disliked_places"].append(item_data)
+        
+        # Decrease category preference
+        category = item_data.get("type", "")
+        if category in prefs["category_preferences"]:
+            prefs["category_preferences"][category] = max(
+                0.1, prefs["category_preferences"][category] - 0.1
+            )
+            
+    elif feedback_type == "view_details":
+        # Slightly increase category preference when viewing details
+        category = item_data.get("type", "")
+        if category in prefs["category_preferences"]:
+            prefs["category_preferences"][category] = min(
+                1.0, prefs["category_preferences"][category] + 0.05
+            )
+    
+    # Trim lists if they get too long
+    if len(prefs["liked_places"]) > 20:
+        prefs["liked_places"] = prefs["liked_places"][-20:]
+    if len(prefs["disliked_places"]) > 20:
+        prefs["disliked_places"] = prefs["disliked_places"][-20:]
+    
+    # Save back to session state
+    st.session_state.user_preferences = prefs
 
 # Enhanced version of choose_place with better error handling
 @safe_api_call
