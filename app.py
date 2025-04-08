@@ -149,8 +149,13 @@ if "recommendation_shown" not in st.session_state or not st.session_state.recomm
                                     
                                 logging.info(f"Trying to fetch image for keyword: {keyword}")
                                 try:
-                                    # Try Google Maps API first
-                                    img_url = fetch_image_for_keyword(keyword, st.session_state.GOOGLE_MAPS_API_KEY)
+                                    # Try with all available APIs
+                                    img_url = fetch_image_for_keyword(
+                                        keyword, 
+                                        st.session_state.GOOGLE_MAPS_API_KEY,
+                                        st.session_state.get('GOOGLE_CSE_ID'),
+                                        st.session_state.get('GOOGLE_CSE_API_KEY')
+                                    )
                                     if img_url:
                                         image_url = img_url
                                         main_keyword = keyword
@@ -161,6 +166,37 @@ if "recommendation_shown" not in st.session_state or not st.session_state.recomm
                                     continue
                         except Exception as kw_err:
                             logging.error(f"Error extracting keywords: {str(kw_err)}")
+                            
+                        # If still no image, try with the backup method
+                        if not image_url:
+                            # Fall back to simple extraction
+                            main_keyword = extract_main_keywords(activity_description)
+                            if main_keyword and len(main_keyword) >= 3:
+                                logging.info(f"Trying fallback keyword: {main_keyword}")
+                                image_url = fetch_image_for_keyword(
+                                    main_keyword, 
+                                    st.session_state.GOOGLE_MAPS_API_KEY,
+                                    st.session_state.get('GOOGLE_CSE_ID'),
+                                    st.session_state.get('GOOGLE_CSE_API_KEY')
+                                )
+                            
+                        # Final direct fallback to Unsplash with core keyword extraction
+                        if not image_url and main_keyword:
+                            core_keyword = extract_core_keyword(main_keyword)
+                            logging.info(f"Trying core keyword: {core_keyword}")
+                            image_url = fetch_unsplash_image(core_keyword)
+                            main_keyword = core_keyword
+                            
+                        # Last resort - try with the interest type
+                        if not image_url:
+                            logging.info(f"Using interest type as keyword: {top_interest}")
+                            image_url = fetch_unsplash_image(top_interest)
+                            main_keyword = top_interest
+                            
+                    except Exception as e:
+                        logging.error(f"All image fetching methods failed: {str(e)}")
+                        image_url = None
+                        main_keyword = top_interest
                             
                         # If still no image, try with the backup method
                         if not image_url:
