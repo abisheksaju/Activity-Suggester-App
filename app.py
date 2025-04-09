@@ -344,7 +344,7 @@ if "recommendation_data" in st.session_state:
             st.success("Great! I'll remember you liked this for future recommendations!")
 
     with col2:
-    if st.button("👎 Show me something else"):
+        if st.button("👎 Show me something else"):
         # Update user preferences with dislike
         item_data = {
             "name": data.get("name", "Unknown"),
