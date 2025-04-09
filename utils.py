@@ -440,6 +440,7 @@ def fetch_google_images(keyword, GOOGLE_CSE_ID, GOOGLE_API_KEY):
         logger.error(f"Error fetching Google image for '{keyword}': {str(e)}")
         return None
 
+
 @safe_api_call
 def fetch_image_for_keyword(keyword, GOOGLE_MAPS_API_KEY, GOOGLE_CSE_ID=None, GOOGLE_CSE_API_KEY=None):
     """
@@ -456,7 +457,28 @@ def fetch_image_for_keyword(keyword, GOOGLE_MAPS_API_KEY, GOOGLE_CSE_ID=None, GO
         
         logging.info(f"Original: '{original_keyword}', Simplified: '{simplified_keyword}', Core: '{core_keyword}'")
 
-        # Try Google Maps API first
+        # Try Unsplash first for indoor activities
+        logging.info(f"Trying Unsplash with original keyword: {original_keyword}")
+        unsplash_url = fetch_unsplash_image(original_keyword)
+        if unsplash_url:
+            logging.info("Got image from Unsplash with original keyword")
+            return unsplash_url
+            
+        # Try simplified keyword
+        logging.info(f"Trying Unsplash with simplified keyword: {simplified_keyword}")
+        unsplash_url = fetch_unsplash_image(simplified_keyword)
+        if unsplash_url:
+            logging.info("Got image from Unsplash with simplified keyword")
+            return unsplash_url
+            
+        # Try core keyword
+        logging.info(f"Trying Unsplash with core keyword: {core_keyword}")
+        unsplash_url = fetch_unsplash_image(core_keyword)
+        if unsplash_url:
+            logging.info("Got image from Unsplash with core keyword")
+            return unsplash_url
+
+        # Only if Unsplash fails, try Google Maps API
         try:
             gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 
@@ -505,27 +527,6 @@ def fetch_image_for_keyword(keyword, GOOGLE_MAPS_API_KEY, GOOGLE_CSE_ID=None, GO
                     return google_image
             except Exception as e:
                 logging.warning(f"Google CSE image fetch failed: {str(e)}")
-        
-        # Fall back to Unsplash - first try original keyword
-        logging.info(f"Falling back to Unsplash for keyword: {original_keyword}")
-        unsplash_url = fetch_unsplash_image(original_keyword)
-        if unsplash_url:
-            logging.info("Got image from Unsplash with original keyword")
-            return unsplash_url
-            
-        # Try simplified keyword
-        logging.info(f"Trying Unsplash with simplified keyword: {simplified_keyword}")
-        unsplash_url = fetch_unsplash_image(simplified_keyword)
-        if unsplash_url:
-            logging.info("Got image from Unsplash with simplified keyword")
-            return unsplash_url
-            
-        # Try core keyword
-        logging.info(f"Trying Unsplash with core keyword: {core_keyword}")
-        unsplash_url = fetch_unsplash_image(core_keyword)
-        if unsplash_url:
-            logging.info("Got image from Unsplash with core keyword")
-            return unsplash_url
             
         return None
 
@@ -870,6 +871,7 @@ def update_preferences_from_feedback(feedback_type, item_data):
 
 # Enhanced version of choose_place with better error handling
 @safe_api_call
+@safe_api_call
 def choose_place(user, places, model, user_feedback=None):
     """Choose place with comprehensive error handling"""
     if not places:
@@ -877,6 +879,20 @@ def choose_place(user, places, model, user_feedback=None):
         return None, "We couldn't find any interesting places nearby. Let's suggest an indoor activity instead."
 
     try:
+        # Initialize disliked places list if not exists
+        if "disliked_places_ids" not in st.session_state:
+            st.session_state.disliked_places_ids = []
+        
+        # Filter out disliked places
+        filtered_places = [place for place in places if place.get("place_id") not in st.session_state.disliked_places_ids]
+        
+        if not filtered_places:
+            logger.warning("All nearby places have been disliked")
+            return None, "You've seen all nearby places. Let's suggest an indoor activity instead."
+        
+        # Continue with filtered places
+        places = filtered_places
+
         # Enrich place data
         enriched_places = []
 
@@ -954,27 +970,18 @@ Here are some options nearby:
         prompt += """
 Based on this context and the user's preferences history, choose the best one and explain why it's a good fit right now.
 Make your response in not more than 1-2 short, fun, personal sentences that could show up on a phone lockscreen.
+Also mention the specific name of the place you're recommending.
 """
 
         response = model.generate_content(prompt)
         description = response.text.strip()
 
-        # If user provided feedback, try to select a different place than before
-        if user_feedback and "previous_place_id" in st.session_state:
-            # Try to pick a different place
-            for place in places:
-                if place.get("place_id") != st.session_state.previous_place_id:
-                    st.session_state.previous_place_id = place.get("place_id")
-                    # Add enrichment data
-                    place.update({"description": description})
-                    return place, description
-
-        # Store the selected place ID for future reference
+        # Select the first place as the recommendation
         if places and len(places) > 0:
-            st.session_state.previous_place_id = places[0].get("place_id")
-            # Add enrichment data
-            places[0].update({"description": description})
-            return places[0], description
+            selected_place = places[0]
+            # Add enrichment data and description
+            selected_place.update({"description": description})
+            return selected_place, description
 
     except LLMError as e:
         logger.error(f"LLM Error in choose_place: {str(e)}")
