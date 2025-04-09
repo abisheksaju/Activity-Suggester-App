@@ -870,8 +870,119 @@ def update_preferences_from_feedback(feedback_type, item_data):
     # Save back to session state
     st.session_state.user_preferences = prefs
 
+# Add these functions to utils.py
+
+def get_suggestion_history():
+    """
+    Retrieve suggestion history from session state
+    """
+    if "suggestion_history" not in st.session_state:
+        st.session_state.suggestion_history = {
+            "indoor": [],  # List of indoor suggestions
+            "outdoor": [],  # List of outdoor place IDs
+            "total_shown": 0  # Total count of suggestions shown
+        }
+    
+    return st.session_state.suggestion_history
+
+def is_duplicate_suggestion(suggestion_text, suggestion_type):
+    """
+    Check if a suggestion has been shown before
+    
+    Args:
+        suggestion_text: The text of the suggestion or place_id for outdoor places
+        suggestion_type: Either "indoor" or "outdoor"
+        
+    Returns:
+        Boolean: True if it's a duplicate, False otherwise
+    """
+    history = get_suggestion_history()
+    
+    # For indoor activities, we check the actual text
+    if suggestion_type == "indoor":
+        # Normalize the text for comparison
+        normalized_text = suggestion_text.lower().strip()
+        
+        # Check for exact matches
+        for past_suggestion in history["indoor"]:
+            past_normalized = past_suggestion.lower().strip()
+            if past_normalized == normalized_text:
+                return True
+            
+            # Also check for high similarity (suggestion with the same core activity)
+            # We consider >70% word overlap as a duplicate
+            words1 = set(past_normalized.split())
+            words2 = set(normalized_text.split())
+            if words1 and words2:  # Avoid division by zero
+                overlap = len(words1.intersection(words2)) / min(len(words1), len(words2))
+                if overlap > 0.7:
+                    return True
+    
+    # For outdoor, we check place_id
+    elif suggestion_type == "outdoor" and suggestion_text:
+        return suggestion_text in history["outdoor"]
+    
+    return False
+
+def add_to_suggestion_history(suggestion, suggestion_type, place_id=None):
+    """
+    Add a suggestion to the history
+    
+    Args:
+        suggestion: The suggestion text (for indoor) or place info (for outdoor)
+        suggestion_type: Either "indoor" or "outdoor"
+        place_id: The Google Place ID (for outdoor activities)
+    """
+    history = get_suggestion_history()
+    
+    if suggestion_type == "indoor":
+        # Keep only the most recent suggestions (limit to 20)
+        if len(history["indoor"]) >= 20:
+            history["indoor"] = history["indoor"][1:]  # Remove oldest
+        history["indoor"].append(suggestion)
+    
+    elif suggestion_type == "outdoor" and place_id:
+        # Keep track of up to 50 place IDs to avoid repeating
+        if len(history["outdoor"]) >= 50:
+            history["outdoor"] = history["outdoor"][1:]  # Remove oldest
+        history["outdoor"].append(place_id)
+    
+    # Increment total suggestions counter
+    history["total_shown"] += 1
+    
+    # Update session state
+    st.session_state.suggestion_history = history
+
+def get_llm_prompt_with_history(base_prompt, suggestion_type):
+    """
+    Enhance a base LLM prompt with history information
+    
+    Args:
+        base_prompt: The original prompt
+        suggestion_type: Either "indoor" or "outdoor"
+        
+    Returns:
+        Enhanced prompt with history information
+    """
+    history = get_suggestion_history()
+    
+    if suggestion_type == "indoor" and history["indoor"]:
+        # Add the last 3 indoor suggestions to avoid repetition
+        recent_indoor = history["indoor"][-3:]
+        history_note = "\nPreviously suggested indoor activities (DO NOT suggest these again):\n"
+        history_note += "\n".join([f"- {item}" for item in recent_indoor])
+        history_note += "\n\nPlease suggest something DIFFERENT from these previous recommendations."
+        
+        # Add the history note before the last paragraph to keep the final instructions intact
+        lines = base_prompt.split("\n")
+        if len(lines) >= 2:
+            return "\n".join(lines[:-2]) + history_note + "\n\n" + "\n".join(lines[-2:])
+        else:
+            return base_prompt + history_note
+    
+    return base_prompt
+
 # Enhanced version of choose_place with better error handling
-@safe_api_call
 @safe_api_call
 def choose_place(user, places, model, user_feedback=None):
     """Choose the best place from options and return selected_place and LLM description."""
@@ -882,11 +993,28 @@ def choose_place(user, places, model, user_feedback=None):
     try:
         if "disliked_places_ids" not in st.session_state:
             st.session_state.disliked_places_ids = []
+            
+        # Get suggestion history
+        history = get_suggestion_history()
+        previous_places = history.get("outdoor", [])
 
-        # Filter out previously disliked places
-        filtered_places = [place for place in places if place.get("place_id") not in st.session_state.disliked_places_ids]
+        # Filter out previously disliked and suggested places
+        filtered_places = [
+            place for place in places 
+            if place.get("place_id") not in st.session_state.disliked_places_ids 
+            and place.get("place_id") not in previous_places
+        ]
+        
         if not filtered_places:
-            return None, "You've seen all nearby places. Let's suggest an indoor activity instead."
+            # If we've exhausted all options, allow reusing places but mention it
+            logger.warning("All nearby places have been seen before, allowing repeats")
+            filtered_places = [
+                place for place in places 
+                if place.get("place_id") not in st.session_state.disliked_places_ids
+            ]
+            
+            if not filtered_places:
+                return None, "You've seen all nearby places. Let's suggest an indoor activity instead."
 
         places = filtered_places
         enriched_places = []
@@ -939,8 +1067,12 @@ User preferences:
 User History and Preferences:
 {personalized_context}
 
-Here are some options nearby:
 """
+        # Add information about previous suggestions if any
+        if previous_places:
+            prompt += "\nI want to suggest a NEW place the user hasn't seen before.\n"
+        
+        prompt += "Here are some options nearby:\n"
 
         for place in enriched_places:
             prompt += f"\n{place['prominence_rank']}. {place['name']} - Located at {place['address']}. "
