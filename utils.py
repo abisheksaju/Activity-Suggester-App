@@ -601,7 +601,7 @@ def top_activity_interest_llm(user):
     """
     response = model.generate_content(prompt)
     ranked_categories = response.text.strip().split('\n')
-    top_interest = ranked_categories[0].split(".")[1].strip() if ranked_categories else "travel"
+    top_interest = ranked_categories[0].split(".")[1].strip()
     return top_interest
 
 
