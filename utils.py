@@ -83,9 +83,9 @@ def get_synthetic_user():
             "lat": 12.9716,
             "lon": 77.5946
         },
-        "weather": "Clear",
+        "weather": "Rainy",
         "current_time": "Friday 2 PM",
-        "free_hours": 0,
+        "free_hours": 0.50,
         "calendar": [
             {"event": "Lunch with friend", "start": "1 PM", "end": "2 PM"},
             {"event": "Office Meeting", "start": "4 PM", "end": "6:30 PM"}
