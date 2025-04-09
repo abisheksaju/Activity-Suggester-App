@@ -419,7 +419,7 @@ with st.sidebar.expander("📊 Your Preference Profile"):
         for item in prefs["liked_places"][-3:]:
             st.sidebar.write(f"- {item['name']} ({item['type']})")
     else:
-        st.sidebar.write("No likes recorded yet.")
+        st.sidebar.write("No likes recorded yet .")
 
     # Show recent dislikes
     st.sidebar.subheader("Recent Dislikes")
