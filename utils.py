@@ -558,16 +558,13 @@ def calculate_interest_adjustments(prefs):
 
 def get_adjusted_interests(user):
     """Get user interests adjusted by feedback"""
-    interests = user.get("interests", {}).copy()
     prefs = get_user_preferences_db()
-    adjustments = prefs.get("interest_adjustments", {})
-    
-    # Apply adjustments
-    for category, adjustment in adjustments.items():
-        if category in interests:
-            interests[category] = min(max(interests[category] + adjustment, 0), 1)  # Keep between 0 and 1
-    
-    return interests
+    updated_scores = prefs.get("category_preferences", {})
+    if updated_scores:
+        return updated_scores
+
+    # Fallback to original interests from user
+    return user.get("interests", {})
 
 
 
