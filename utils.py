@@ -95,7 +95,9 @@ def get_synthetic_user():
             "food": 0.18,
             "news": 0.15,
             "shopping": 0.13,
-            "gaming": 0.24
+            "gaming": 0.24,
+            "sports": 0.40,
+            "fitness": 0.40
         }
     }
 
@@ -840,10 +842,13 @@ def get_user_preferences_db():
         st.session_state.user_preferences = {
             "category_preferences": {
                 "food": 0.6,
-                "travel": 0.8,
+                "travel": 0.5,
                 "shopping": 0.5,
                 "gaming": 0.5,
-                "news": 0.5
+                "news": 0.5,
+                "sports": 0.5,
+                "fitness": 0.8,
+                "pets": 0.7
             },
             "liked_places": [],
             "disliked_places": []
