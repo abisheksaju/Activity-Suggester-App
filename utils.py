@@ -842,12 +842,12 @@ def get_user_preferences_db():
         st.session_state.user_preferences = {
             "category_preferences": {
                 "food": 0.6,
-                "travel": 0.7,
+                "travel": 0.8,
                 "shopping": 0.5,
                 "gaming": 0.5,
                 "news": 0.5,
-                "sports": 0.8,
-                "fitness": 0.5,
+                "sports": 0.6,
+                "fitness": 0.7,
                 "pets": 0.5
             },
             "liked_places": [],
