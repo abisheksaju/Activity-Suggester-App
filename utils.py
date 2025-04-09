@@ -91,11 +91,11 @@ def get_synthetic_user():
             {"event": "Office Meeting", "start": "4 PM", "end": "6:30 PM"}
         ],
         "interests": {
-            "travel": 0.81,
-            "food": 0.48,
-            "news": 0.65,
-            "shopping": 0.93,
-            "gaming": 0.76
+            "travel": 0.91,
+            "food": 0.18,
+            "news": 0.15,
+            "shopping": 0.13,
+            "gaming": 0.24
         }
     }
 
