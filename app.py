@@ -312,7 +312,7 @@ if "recommendation_data" in st.session_state:
 
     # Display image if available (for both indoor and outdoor activities)
     if data.get("image_url"):
-        st.image(data["image_url"], use_column_width=True)
+        st.image(data["image_url"], use_container_width=True)
 
     st.subheader("🔍 Suggested Activity")
     st.write(data["description"])
