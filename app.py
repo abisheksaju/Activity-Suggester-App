@@ -346,6 +346,7 @@ if "recommendation_data" in st.session_state:
             update_preferences_from_feedback("dislike", item_data)
             # Store feedback to use in next recommendation
             st.session_state.user_feedback = "The user did not like the previous suggestion. Please provide a completely different recommendation."
+            st.session_state.top_interest = top_activity_interest_llm(user)
             st.session_state.recommendation_shown = False
             st.rerun()
 
