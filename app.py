@@ -31,6 +31,7 @@ from utils import (
     is_duplicate_suggestion,
     add_to_suggestion_history,
     get_llm_prompt_with_history,
+    calculate_free_time,
     AppError, APIError, LLMError, ImageError
 )
 
