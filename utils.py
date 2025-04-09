@@ -968,9 +968,9 @@ Here are some options nearby:
             prompt += f"Round trip travel time: {place['travel_time_mins']} minutes. "
 
         prompt += """
-Based on this context and the user's preferences history, choose the best one and explain why it's a good fit right now.
+Based on this context and the user's preferences history, choose the best one and the information about that place should only be mentioned and explain why it's a good fit right now.
 Make your response in not more than 1-2 short, fun, personal sentences that could show up on a phone lockscreen.
-Also mention the specific name of the place you're recommending.
+Also mention the specific name of the place you're recommending. 
 """
 
         response = model.generate_content(prompt)
