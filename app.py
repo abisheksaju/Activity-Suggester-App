@@ -66,7 +66,7 @@ if "initialized" not in st.session_state:
         # Configure Gemini model
         os.environ['GEMINI_API_KEY'] = GEMINI_API_KEY
         genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel("gemini-2.0-flash")
+        model = genai.GenerativeModel("gemini-1.5-flash")
 
         # Initialize clients
         ors_client, gmaps_client = init_clients(ORS_API_KEY, GOOGLE_MAPS_API_KEY)
