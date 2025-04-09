@@ -1030,7 +1030,7 @@ def calculate_free_time(current_time_str, calendar_events, max_hours=6):
     Calculate free time until next calendar event, with a maximum limit.
     
     Args:
-        current_time_str: String representing current time (e.g., "Saturday 8 AM")
+        current_time_str: String representing current time (e.g., "Friday 2:30 PM")
         calendar_events: List of calendar events with start and end times
         max_hours: Maximum number of free hours to return (default: 6)
         
@@ -1039,66 +1039,189 @@ def calculate_free_time(current_time_str, calendar_events, max_hours=6):
     """
     try:
         # Parse the current time string
-        # Expected format: "Day of week Hour AM/PM" (e.g., "Saturday 8 AM")
-        time_parts = current_time_str.split()
-        if len(time_parts) < 2:
-            return max_hours  # Default to max if parsing fails
+        day_parts = current_time_str.split()
         
-        # Extract hour and AM/PM
-        hour_str = time_parts[-2]
-        am_pm = time_parts[-1].upper()
+        # Handle different time formats: "Friday 2:30 PM" or "Friday 2 PM"
+        time_str = " ".join(day_parts[1:])  # Extract the time portion
         
-        # Convert hour to 24-hour format
-        try:
-            hour = int(hour_str)
-            if am_pm == "PM" and hour < 12:
-                hour += 12
-            elif am_pm == "AM" and hour == 12:
-                hour = 0
-        except ValueError:
-            return max_hours  # Default to max if parsing fails
+        # Parse hour and minute
+        current_hour = 0
+        current_minute = 0
         
-        # Find the next event
-        next_event_hour = None
+        if ":" in time_str:
+            # Format like "2:30 PM"
+            time_parts = time_str.split(":")
+            current_hour = int(time_parts[0])
+            
+            # Extract minutes from the second part which may contain AM/PM
+            minute_part = time_parts[1].split()[0]
+            current_minute = int(minute_part)
+            
+            # Check for AM/PM
+            if "PM" in time_str.upper() and current_hour < 12:
+                current_hour += 12
+            elif "AM" in time_str.upper() and current_hour == 12:
+                current_hour = 0
+        else:
+            # Format like "2 PM"
+            hour_part = time_str.split()[0]
+            current_hour = int(hour_part)
+            
+            # Check for AM/PM
+            if "PM" in time_str.upper() and current_hour < 12:
+                current_hour += 12
+            elif "AM" in time_str.upper() and current_hour == 12:
+                current_hour = 0
+        
+        # Current time in minutes since midnight
+        current_time_minutes = current_hour * 60 + current_minute
+        
+        # Track ongoing events and find next event
+        is_in_event = False
+        next_event_minutes = None
+        
         for event in calendar_events:
             event_start = event.get("start", "")
+            event_end = event.get("end", "")
+            
             if not event_start:
                 continue
                 
             # Parse event start time
-            event_parts = event_start.split()
-            if len(event_parts) < 2:
-                continue
+            start_hour, start_minute = 0, 0
+            if ":" in event_start:
+                # Format like "1:30 PM"
+                start_parts = event_start.split(":")
+                start_hour = int(start_parts[0])
                 
-            event_hour_str = event_parts[0]
-            event_am_pm = event_parts[1].upper()
+                # Extract minutes from the second part which may contain AM/PM
+                start_minute_part = start_parts[1].split()[0]
+                start_minute = int(start_minute_part)
+                
+                # Check for AM/PM
+                if "PM" in event_start.upper() and start_hour < 12:
+                    start_hour += 12
+                elif "AM" in event_start.upper() and start_hour == 12:
+                    start_hour = 0
+            else:
+                # Format like "1 PM"
+                start_hour_part = event_start.split()[0]
+                start_hour = int(start_hour_part)
+                
+                # Check for AM/PM
+                if "PM" in event_start.upper() and start_hour < 12:
+                    start_hour += 12
+                elif "AM" in event_start.upper() and start_hour == 12:
+                    start_hour = 0
             
-            try:
-                event_hour = int(event_hour_str)
-                if event_am_pm == "PM" and event_hour < 12:
-                    event_hour += 12
-                elif event_am_pm == "AM" and event_hour == 12:
-                    event_hour = 0
+            # Parse event end time if available
+            end_hour, end_minute = 23, 59  # Default to end of day
+            if event_end:
+                if ":" in event_end:
+                    # Format like "6:30 PM"
+                    end_parts = event_end.split(":")
+                    end_hour = int(end_parts[0])
                     
-                # Check if this event is in the future
-                if event_hour > hour:
-                    if next_event_hour is None or event_hour < next_event_hour:
-                        next_event_hour = event_hour
-            except ValueError:
-                continue
+                    # Extract minutes from the second part which may contain AM/PM
+                    end_minute_part = end_parts[1].split()[0]
+                    end_minute = int(end_minute_part)
+                    
+                    # Check for AM/PM
+                    if "PM" in event_end.upper() and end_hour < 12:
+                        end_hour += 12
+                    elif "AM" in event_end.upper() and end_hour == 12:
+                        end_hour = 0
+                else:
+                    # Format like "6 PM"
+                    end_hour_part = event_end.split()[0]
+                    end_hour = int(end_hour_part)
+                    
+                    # Check for AM/PM
+                    if "PM" in event_end.upper() and end_hour < 12:
+                        end_hour += 12
+                    elif "AM" in event_end.upper() and end_hour == 12:
+                        end_hour = 0
+            
+            # Convert to minutes since midnight
+            start_time_minutes = start_hour * 60 + start_minute
+            end_time_minutes = end_hour * 60 + end_minute
+            
+            # Check if user is currently in an event
+            if start_time_minutes <= current_time_minutes <= end_time_minutes:
+                is_in_event = True
+                # Free time starts after this event ends
+                next_free_start = end_time_minutes
+                
+                # But there might be another event right after this one
+                for other_event in calendar_events:
+                    other_start = other_event.get("start", "")
+                    if not other_start:
+                        continue
+                    
+                    # Parse other event start time
+                    other_start_minutes = parse_time_to_minutes(other_start)
+                    
+                    # If another event starts exactly when this one ends or later today
+                    if other_start_minutes >= next_free_start and other_start_minutes > current_time_minutes:
+                        if next_event_minutes is None or other_start_minutes < next_event_minutes:
+                            next_event_minutes = other_start_minutes
+            
+            # If not in an event, check if this is the next upcoming event
+            elif start_time_minutes > current_time_minutes:
+                if next_event_minutes is None or start_time_minutes < next_event_minutes:
+                    next_event_minutes = start_time_minutes
         
         # Calculate free hours
-        if next_event_hour is None:
+        if is_in_event:
+            # User is currently in an event - no free time now
+            return 0
+        elif next_event_minutes is None:
             # No future events today
             return max_hours
         else:
-            free_hours = next_event_hour - hour
-            return min(max(free_hours, 0), max_hours)
+            free_minutes = next_event_minutes - current_time_minutes
+            free_hours = free_minutes / 60.0
+            return min(max(round(free_hours), 0), max_hours)
             
     except Exception as e:
-        # If anything goes wrong, return the maximum
+        # If anything goes wrong, log and return 0 (safer assumption than max)
         logging.error(f"Error calculating free time: {str(e)}")
-        return max_hours
+        logging.error(traceback.format_exc())
+        return 0
+
+def parse_time_to_minutes(time_str):
+    """Helper function to parse time strings to minutes since midnight"""
+    try:
+        hour, minute = 0, 0
+        
+        if ":" in time_str:
+            # Format like "1:30 PM"
+            time_parts = time_str.split(":")
+            hour = int(time_parts[0])
+            
+            # Extract minutes from the second part which may contain AM/PM
+            minute_part = time_parts[1].split()[0]
+            minute = int(minute_part)
+            
+            # Check for AM/PM
+            if "PM" in time_str.upper() and hour < 12:
+                hour += 12
+            elif "AM" in time_str.upper() and hour == 12:
+                hour = 0
+        else:
+            # Format like "1 PM"
+            hour_part = time_str.split()[0]
+            hour = int(hour_part)
+            
+            # Check for AM/PM
+            if "PM" in time_str.upper() and hour < 12:
+                hour += 12
+            elif "AM" in time_str.upper() and hour == 12:
+                hour = 0
+                
+        return hour * 60 + minute
+    except Exception:
+        return 0  # Default in case of error
 
 # Enhanced version of choose_place with better error handling
 @safe_api_call
