@@ -32,6 +32,7 @@ from utils import (
     add_to_suggestion_history,
     get_llm_prompt_with_history,
     calculate_free_time,
+    parse_time_to_minutes,
     AppError, APIError, LLMError, ImageError
 )
 
