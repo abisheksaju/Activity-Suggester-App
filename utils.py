@@ -644,7 +644,8 @@ def build_llm_prompt_indoor(user, top_interest, user_feedback=None):
     - I have {user.get("free_hours", "Unknown")} free hours
     - My top interest right now: {top_interest}
     - My city right now: {user['location']['city']}
-    
+
+    ❗ Choose only one activity. Do not list or compare options. 
     Make your response in 1-2 short, fun, personal sentences that help me decide what to do right now.
     Be specific and practical. Recommend something realistic, not generic. Your output would be displayed on the lockscreen of the users phone
     """
@@ -968,7 +969,7 @@ Here are some options nearby:
             prompt += f"Round trip travel time: {place['travel_time_mins']} minutes. "
 
         prompt += """
-Based on this context and the user's preferences history, choose the best one and the information about that place should only be mentioned and explain why it's a good fit right now.
+❗ Choose only one place. Do not list or compare options. 
 Make your response in not more than 1-2 short, fun, personal sentences that could show up on a phone lockscreen.
 Also mention the specific name of the place you're recommending.
 """
