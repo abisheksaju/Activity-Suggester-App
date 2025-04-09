@@ -812,7 +812,6 @@ def get_user_preferences_db():
     """
     Get user preferences from "database" (session state in this MVP)
     """
-    if "user_preferences" not in st.session_state:
         st.session_state.user_preferences = {
             "category_preferences": {
                 "food": 0.6,
