@@ -827,69 +827,49 @@ def get_user_preferences_db():
     
     return st.session_state.user_preferences
 
-def update_preferences_from_feedback(preference_type, item_data):
-    """Update the user preferences database based on feedback"""
+def update_preferences_from_feedback(feedback_type, item_data):
+    """
+    Update user preferences based on feedback
+    """
     prefs = get_user_preferences_db()
     
-    timestamp = datetime.datetime.now().isoformat()
-    
-    if preference_type == "like":
-        # Add to liked places
-        prefs["liked_places"].append({
-            "name": item_data.get("name", "Unknown"),
-            "type": item_data.get("type", "Unknown"),
-            "timestamp": timestamp
-        })
+    # Add to liked or disliked places
+    if feedback_type == "like":
+        prefs["liked_places"].append(item_data)
         
-        # Update category preference
-        category = item_data.get("type", "unknown")
+        # Increase category preference
+        category = item_data.get("type", "")
         if category in prefs["category_preferences"]:
-            prefs["category_preferences"][category] += 1
-        else:
-            prefs["category_preferences"][category] = 1
+            prefs["category_preferences"][category] = min(
+                1.0, prefs["category_preferences"][category] + 0.1
+            )
             
-    elif preference_type == "dislike":
-        # Add to disliked places
-        prefs["disliked_places"].append({
-            "name": item_data.get("name", "Unknown"),
-            "type": item_data.get("type", "Unknown"),
-            "timestamp": timestamp
-        })
+    elif feedback_type == "dislike":
+        prefs["disliked_places"].append(item_data)
         
         # Decrease category preference
-        category = item_data.get("type", "unknown")
+        category = item_data.get("type", "")
         if category in prefs["category_preferences"]:
-            prefs["category_preferences"][category] -= 0.5
-        else:
-            prefs["category_preferences"][category] = -0.5
-    
-    elif preference_type == "view_details":
-        # Track when user views details (shows higher interest)
-        prefs["viewed_details"].append({
-            "name": item_data.get("name", "Unknown"),
-            "type": item_data.get("type", "Unknown"),
-            "timestamp": timestamp
-        })
-        
-        # Slightly increase category preference
-        category = item_data.get("type", "unknown")
+            prefs["category_preferences"][category] = max(
+                0.1, prefs["category_preferences"][category] - 0.1
+            )
+            
+    elif feedback_type == "view_details":
+        # Slightly increase category preference when viewing details
+        category = item_data.get("type", "")
         if category in prefs["category_preferences"]:
-            prefs["category_preferences"][category] += 0.2
-        else:
-            prefs["category_preferences"][category] = 0.2
+            prefs["category_preferences"][category] = min(
+                1.0, prefs["category_preferences"][category] + 0.05
+            )
     
-    # Add to general feedback history
-    prefs["feedback_history"].append({
-        "type": preference_type,
-        "item": item_data.get("name", "Unknown"),
-        "category": item_data.get("type", "Unknown"),
-        "timestamp": timestamp
-    })
+    # Trim lists if they get too long
+    if len(prefs["liked_places"]) > 20:
+        prefs["liked_places"] = prefs["liked_places"][-20:]
+    if len(prefs["disliked_places"]) > 20:
+        prefs["disliked_places"] = prefs["disliked_places"][-20:]
     
-    # Calculate interest adjustments based on feedback history
-    calculate_interest_adjustments(prefs)
-    
-    return prefs
+    # Save back to session state
+    st.session_state.user_preferences = prefs
 
 # Enhanced version of choose_place with better error handling
 @safe_api_call
