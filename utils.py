@@ -533,22 +533,37 @@ def fetch_image_for_keyword(keyword, GOOGLE_MAPS_API_KEY, GOOGLE_CSE_ID=None, GO
         logging.error(f"All image fetching methods failed for keyword '{keyword}': {str(e)}")
         return None
 
-def top_activity_interest_llm(user):
+def top_activity_interest_llm(user_context):
+    model = st.session_state.model
+    
+    # Get adjusted interests based on feedback
+    adjusted_interests = get_adjusted_interests(user_context)
+    
+    prompt = f"""
+    You are a smart assistant that ranks user interests in the context of the moment.
+
+    User Context:
+    - City: {user_context['location']['city']}
+    - Weather: {user_context['weather']}
+    - Current Time: {user_context['current_time']}
+    - Free Hours: {user_context['free_hours']}
+    - Interests (with scores): {adjusted_interests}
+
+    Based on this context, rank the categories from most to least relevant **for recommending an activity right now**.
+
+    Return a ranked list like this:
+    1. travel
+    2. gaming
+    3. shopping
+    ...
+
+    Only return the list — no explanations.
     """
-    Use LLM to determine what activity would most interest the user right now
-    """
-    try:
-        # For the MVP version we'll just use the top interest from the user profile
-        if user and "interests" in user:
-            interests = user["interests"]
-            # Return the highest-scoring interest
-            if interests:
-                top_interest = max(interests.items(), key=lambda x: x[1])[0]
-                return top_interest
-        return "food"  # Default fallback
-    except Exception as e:
-        logger.error(f"Error determining top interest: {str(e)}")
-        return "food"  # Default fallback
+    response = model.generate_content(prompt)
+    ranked_categories = response.text.strip().split('\n')
+    top_interest = ranked_categories[0].split(".")[1].strip() if ranked_categories else "travel"
+    return top_interest
+
 
 def build_llm_decision_prompt(user, top_interest):
     """
