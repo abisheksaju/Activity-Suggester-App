@@ -83,7 +83,7 @@ def get_synthetic_user():
             "lat": 12.9716,
             "lon": 77.5946
         },
-        "weather": "Rainy",
+        "weather": "Clear",
         "current_time": "Saturday 8 AM",
         "free_hours": 4,
         "calendar": [
