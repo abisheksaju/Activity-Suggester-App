@@ -874,63 +874,44 @@ def update_preferences_from_feedback(feedback_type, item_data):
 @safe_api_call
 @safe_api_call
 def choose_place(user, places, model, user_feedback=None):
-    """Choose place with comprehensive error handling"""
+    """Choose the best place from options and return selected_place and LLM description."""
     if not places:
         logger.warning("No places found to choose from")
         return None, "We couldn't find any interesting places nearby. Let's suggest an indoor activity instead."
 
     try:
-        # Initialize disliked places list if not exists
         if "disliked_places_ids" not in st.session_state:
             st.session_state.disliked_places_ids = []
-        
-        # Filter out disliked places
-        filtered_places = [place for place in places if place.get("place_id") not in st.session_state.disliked_places_ids]
-        
-        if not filtered_places:
-            logger.warning("All nearby places have been disliked")
-            return None, "You've seen all nearby places. Let's suggest an indoor activity instead."
-        
-        # Continue with filtered places
-        places = filtered_places
 
-        # Enrich place data
+        # Filter out previously disliked places
+        filtered_places = [place for place in places if place.get("place_id") not in st.session_state.disliked_places_ids]
+        if not filtered_places:
+            return None, "You've seen all nearby places. Let's suggest an indoor activity instead."
+
+        places = filtered_places
         enriched_places = []
 
-        lat = user.get('location', {}).get('lat')
-        lon = user.get('location', {}).get('lon')
+        lat = user.get("location", {}).get("lat")
+        lon = user.get("location", {}).get("lon")
+        ors_client = st.session_state.get("ors_client")
+        top_interest = st.session_state.get("top_interest", "activity")
 
-        if not lat or not lon:
-            logger.warning("Missing user location coordinates")
-            return None, "We couldn't determine your location accurately. Let's suggest an indoor activity instead."
+        if not lat or not lon or not ors_client:
+            return None, "We couldn't get enough data to find outdoor suggestions."
 
-        ors_client = st.session_state.get('ors_client')
-        if not ors_client:
-            logger.warning("Missing OpenRouteService client")
-            return None, "We're having trouble with our navigation service. Let's suggest an indoor activity instead."
-
-        # Get personalized context
-        top_interest = st.session_state.get('top_interest', 'activity')
         personalized_context = build_personalized_context(user, top_interest)
 
-        for idx, place in enumerate(places[:3]):  # Limit to top 3 for brevity
+        for idx, place in enumerate(places[:3]):
             try:
-                place_lat = place.get('geometry', {}).get('location', {}).get('lat')
-                place_lon = place.get('geometry', {}).get('location', {}).get('lng')
-
-                if not place_lat or not place_lon:
-                    logger.warning(f"Missing coordinates for place: {place.get('name', 'Unknown')}")
-                    continue
-
+                place_lat = place["geometry"]["location"]["lat"]
+                place_lon = place["geometry"]["location"]["lng"]
                 travel_time_mins = get_route_duration((lon, lat), (place_lon, place_lat), ors_client)
-                if travel_time_mins:
-                    travel_time_mins *= 2  # Round trip
-                else:
-                    travel_time_mins = "unknown"
+                travel_time_mins = travel_time_mins * 2 if travel_time_mins else "unknown"
 
                 enriched_places.append({
                     "prominence_rank": idx + 1,
-                    "name": place.get("name", "Unknown place"),
+                    "place": place,
+                    "name": place.get("name", "Unknown"),
                     "rating": place.get("rating", "N/A"),
                     "total_ratings": place.get("user_ratings_total", 0),
                     "address": place.get("vicinity", "Unknown location"),
@@ -938,18 +919,16 @@ def choose_place(user, places, model, user_feedback=None):
                     "type": place.get("type", top_interest)
                 })
             except Exception as e:
-                logger.error(f"Error enriching place {place.get('name', 'Unknown')}: {str(e)}")
-                # Continue with next place
+                logger.error(f"Error enriching place: {str(e)}")
+                continue
 
         if not enriched_places:
-            return None, "We're having trouble processing places near you. Let's suggest an indoor activity instead."
+            return None, "We couldn't enrich any places to recommend."
 
-        # Include user feedback in the prompt if available
-        feedback_note = "" if not user_feedback else f"{user_feedback} "
-
-        # Create a prompt with summaries of the place options
+        # Construct LLM prompt
+        feedback_note = user_feedback + " " if user_feedback else ""
         prompt = f"""
-{feedback_note}You're a helpful assistant helping a user decide which is the best place to visit.
+{feedback_note}You're a smart assistant helping a user decide which is the best place to visit.
 
 User preferences:
 - Weather: {user.get("weather", "Unknown")}
@@ -966,17 +945,26 @@ Here are some options nearby:
         for place in enriched_places:
             prompt += f"\n{place['prominence_rank']}. {place['name']} - Located at {place['address']}. "
             prompt += f"Rating: {place['rating']} ({place['total_ratings']} reviews). "
-            prompt += f"Round trip travel time: {place['travel_time_mins']} minutes. "
+            prompt += f"Round trip travel time: {place['travel_time_mins']} minutes."
 
         prompt += """
 ❗ Choose only one place. Do not list or compare options. 
-Make your response in not more than 1-2 short, fun, personal sentences that could show up on a phone lockscreen.
-Also mention the specific name of the place you're recommending.
+Make your response in 1–2 short, fun, personal sentences that could show up on a phone lockscreen.
+Mention only one place by name.
 """
 
         response = model.generate_content(prompt)
         description = response.text.strip()
-        return description
+
+        # Extract the name of the place mentioned from the response
+        selected_place = enriched_places[0]["place"]  # Default fallback
+
+        for place in enriched_places:
+            if place["name"].lower() in description.lower():
+                selected_place = place["place"]
+                break
+
+        return selected_place, description
 
     except LLMError as e:
         logger.error(f"LLM Error in choose_place: {str(e)}")
@@ -985,5 +973,3 @@ Also mention the specific name of the place you're recommending.
         logger.error(f"Error in choose_place: {str(e)}")
         logger.error(traceback.format_exc())
         return None, "We encountered an unexpected error. Let's suggest an indoor activity instead."
-
-    return None, "Sorry, we had trouble generating a suggestion."
