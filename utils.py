@@ -975,13 +975,7 @@ Also mention the specific name of the place you're recommending.
 
         response = model.generate_content(prompt)
         description = response.text.strip()
-
-        # Select the first place as the recommendation
-        if places and len(places) > 0:
-            selected_place = places[0]
-            # Add enrichment data and description
-            selected_place.update({"description": description})
-            return selected_place, description
+        return description
 
     except LLMError as e:
         logger.error(f"LLM Error in choose_place: {str(e)}")
