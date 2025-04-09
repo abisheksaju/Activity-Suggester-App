@@ -26,6 +26,11 @@ from utils import (
     fetch_image_for_keyword,
     fetch_unsplash_image,  # New import
     fetch_google_images, extract_core_keyword, simplify_keyword,
+    # New imports for suggestion history
+    get_suggestion_history,
+    is_duplicate_suggestion,
+    add_to_suggestion_history,
+    get_llm_prompt_with_history,
     AppError, APIError, LLMError, ImageError
 )
 
@@ -129,6 +134,32 @@ if "recommendation_shown" not in st.session_state or not st.session_state.recomm
             # Indoor flow
             if decision == "indoor":
                 try:
+                          # Enhance the prompt with history to avoid repetition
+                    base_prompt = build_llm_prompt_indoor(user, top_interest, st.session_state.user_feedback)
+                    enhanced_prompt = get_llm_prompt_with_history(base_prompt, "indoor")
+                    
+                    # Try up to 3 times to get a non-duplicate suggestion
+                    max_attempts = 3
+                    activity_description = None
+                    for attempt in range(max_attempts):
+                        response = model.generate_content(enhanced_prompt)
+                        activity_description = response.text.strip()
+                        
+                        # Check if it's a duplicate
+                        if not is_duplicate_suggestion(activity_description, "indoor"):
+                            # Not a duplicate, we can use this
+                            break
+                        
+                        # If it's a duplicate and not the last attempt, try again with stronger instruction
+                        if attempt < max_attempts - 1:
+                            logger.warning(f"Duplicate indoor suggestion detected, trying again (attempt {attempt+1})")
+                            enhanced_prompt += "\n\n❗ IMPORTANT: Your previous suggestion was too similar to one you've made before. Please suggest something COMPLETELY DIFFERENT."
+                    
+                    # Record the suggestion in history
+                    if activity_description:
+                        add_to_suggestion_history(activity_description, "indoor")
+                        st.session_state.last_short_response = activity_description
+                    
                     response = model.generate_content(build_llm_prompt_indoor(user, top_interest, st.session_state.user_feedback))
                     activity_description = response.text.strip()
                     st.session_state.last_short_response = activity_description
@@ -224,7 +255,7 @@ if "recommendation_shown" not in st.session_state or not st.session_state.recomm
                     }
                     st.session_state.errors.append(f"Error creating indoor suggestion: {str(e)}")
                     
-           
+           # Outdoor flow
             else:        
                 try:
                     # Fetch places from Google Maps
@@ -233,27 +264,44 @@ if "recommendation_shown" not in st.session_state or not st.session_state.recomm
                     # Choose one - pass user feedback to the LLM
                     selected_place, description = choose_place(user, places, model, st.session_state.user_feedback)
                     if selected_place:
-                        try:
-                            image_url = fetch_place_image(selected_place, st.session_state.GOOGLE_MAPS_API_KEY)
-                            
-                            # Make sure place name is mentioned in the description for clarity
-                            place_name = selected_place.get("name", "Unknown place")
-                            if place_name not in description:
-                                description = f"Check out {place_name}! {description}"
+                        # Check if this place has been suggested before
+                        place_id = selected_place.get("place_id")
+                        if place_id and is_duplicate_suggestion(place_id, "outdoor"):
+                            # It's a duplicate, try again with a different place
+                            logger.warning("Duplicate outdoor place detected, trying to choose a different one")
+                            # Filter out this place_id
+                            filtered_places = [p for p in places if p.get("place_id") != place_id]
+                            if filtered_places:
+                                selected_place, description = choose_place(user, filtered_places, model, st.session_state.user_feedback)
+                        
+                        # Proceed with the selected place
+                        if selected_place:
+                            place_id = selected_place.get("place_id")
+                            # Add to history
+                            if place_id:
+                                add_to_suggestion_history(description, "outdoor", place_id)
                                 
-                        except Exception as e:
-                            logging.error(f"Error fetching place image: {str(e)}")
-                            image_url = None
-            
-                        st.session_state.recommendation_data = {
-                            "type": "outdoor",
-                            "place": selected_place,
-                            "name": selected_place.get("name", "Unknown place"),
-                            "description": description,
-                            "image_url": image_url,
-                            "activity_type": top_interest
-                        }
-                        st.session_state.last_short_response = description
+                            try:
+                                image_url = fetch_place_image(selected_place, st.session_state.GOOGLE_MAPS_API_KEY)
+                                
+                                # Make sure place name is mentioned in the description for clarity
+                                place_name = selected_place.get("name", "Unknown place")
+                                if place_name not in description:
+                                    description = f"Check out {place_name}! {description}"
+                                    
+                            except Exception as e:
+                                logging.error(f"Error fetching place image: {str(e)}")
+                                image_url = None
+                    
+                            st.session_state.recommendation_data = {
+                                "type": "outdoor",
+                                "place": selected_place,
+                                "name": selected_place.get("name", "Unknown place"),
+                                "description": description,
+                                "image_url": image_url,
+                                "activity_type": top_interest
+                            }
+                            st.session_state.last_short_response = description
                     else:
                         # Fallback to indoor if no outdoor places found
                         logging.warning("No outdoor places found, falling back to indoor")
