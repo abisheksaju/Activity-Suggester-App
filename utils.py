@@ -533,11 +533,51 @@ def fetch_image_for_keyword(keyword, GOOGLE_MAPS_API_KEY, GOOGLE_CSE_ID=None, GO
         logging.error(f"All image fetching methods failed for keyword '{keyword}': {str(e)}")
         return None
 
-def top_activity_interest_llm(user_context):
+def calculate_interest_adjustments(prefs):
+    """Calculate interest adjustments based on user feedback"""
+    # Count feedback by category
+    category_counts = {}
+    for feedback in prefs["feedback_history"]:
+        category = feedback["category"]
+        feedback_type = feedback["type"]
+        
+        if category not in category_counts:
+            category_counts[category] = {"like": 0, "dislike": 0, "view_details": 0}
+            
+        if feedback_type in category_counts[category]:
+            category_counts[category][feedback_type] += 1
+    
+    # Calculate adjustments
+    adjustments = {}
+    for category, counts in category_counts.items():
+        # Simple formula: likes + (views * 0.3) - dislikes
+        score = counts.get("like", 0) + (counts.get("view_details", 0) * 0.3) - counts.get("dislike", 0)
+        adjustments[category] = min(max(score * 0.1, -0.5), 0.5)  # Limit adjustment between -0.5 and 0.5
+    
+    prefs["interest_adjustments"] = adjustments
+
+def get_adjusted_interests(user):
+    """Get user interests adjusted by feedback"""
+    interests = user.get("interests", {}).copy()
+    prefs = get_user_preferences_db()
+    adjustments = prefs.get("interest_adjustments", {})
+    
+    # Apply adjustments
+    for category, adjustment in adjustments.items():
+        if category in interests:
+            interests[category] = min(max(interests[category] + adjustment, 0), 1)  # Keep between 0 and 1
+    
+    return interests
+
+
+
+
+
+def top_activity_interest_llm(user):
     model = st.session_state.model
     
     # Get adjusted interests based on feedback
-    adjusted_interests = get_adjusted_interests(user_context)
+    adjusted_interests = get_adjusted_interests(user)
     
     prompt = f"""
     You are a smart assistant that ranks user interests in the context of the moment.
@@ -787,49 +827,69 @@ def get_user_preferences_db():
     
     return st.session_state.user_preferences
 
-def update_preferences_from_feedback(feedback_type, item_data):
-    """
-    Update user preferences based on feedback
-    """
+def update_preferences_from_feedback(preference_type, item_data):
+    """Update the user preferences database based on feedback"""
     prefs = get_user_preferences_db()
     
-    # Add to liked or disliked places
-    if feedback_type == "like":
-        prefs["liked_places"].append(item_data)
+    timestamp = datetime.datetime.now().isoformat()
+    
+    if preference_type == "like":
+        # Add to liked places
+        prefs["liked_places"].append({
+            "name": item_data.get("name", "Unknown"),
+            "type": item_data.get("type", "Unknown"),
+            "timestamp": timestamp
+        })
         
-        # Increase category preference
-        category = item_data.get("type", "")
+        # Update category preference
+        category = item_data.get("type", "unknown")
         if category in prefs["category_preferences"]:
-            prefs["category_preferences"][category] = min(
-                1.0, prefs["category_preferences"][category] + 0.1
-            )
+            prefs["category_preferences"][category] += 1
+        else:
+            prefs["category_preferences"][category] = 1
             
-    elif feedback_type == "dislike":
-        prefs["disliked_places"].append(item_data)
+    elif preference_type == "dislike":
+        # Add to disliked places
+        prefs["disliked_places"].append({
+            "name": item_data.get("name", "Unknown"),
+            "type": item_data.get("type", "Unknown"),
+            "timestamp": timestamp
+        })
         
         # Decrease category preference
-        category = item_data.get("type", "")
+        category = item_data.get("type", "unknown")
         if category in prefs["category_preferences"]:
-            prefs["category_preferences"][category] = max(
-                0.1, prefs["category_preferences"][category] - 0.1
-            )
-            
-    elif feedback_type == "view_details":
-        # Slightly increase category preference when viewing details
-        category = item_data.get("type", "")
+            prefs["category_preferences"][category] -= 0.5
+        else:
+            prefs["category_preferences"][category] = -0.5
+    
+    elif preference_type == "view_details":
+        # Track when user views details (shows higher interest)
+        prefs["viewed_details"].append({
+            "name": item_data.get("name", "Unknown"),
+            "type": item_data.get("type", "Unknown"),
+            "timestamp": timestamp
+        })
+        
+        # Slightly increase category preference
+        category = item_data.get("type", "unknown")
         if category in prefs["category_preferences"]:
-            prefs["category_preferences"][category] = min(
-                1.0, prefs["category_preferences"][category] + 0.05
-            )
+            prefs["category_preferences"][category] += 0.2
+        else:
+            prefs["category_preferences"][category] = 0.2
     
-    # Trim lists if they get too long
-    if len(prefs["liked_places"]) > 20:
-        prefs["liked_places"] = prefs["liked_places"][-20:]
-    if len(prefs["disliked_places"]) > 20:
-        prefs["disliked_places"] = prefs["disliked_places"][-20:]
+    # Add to general feedback history
+    prefs["feedback_history"].append({
+        "type": preference_type,
+        "item": item_data.get("name", "Unknown"),
+        "category": item_data.get("type", "Unknown"),
+        "timestamp": timestamp
+    })
     
-    # Save back to session state
-    st.session_state.user_preferences = prefs
+    # Calculate interest adjustments based on feedback history
+    calculate_interest_adjustments(prefs)
+    
+    return prefs
 
 # Enhanced version of choose_place with better error handling
 @safe_api_call
