@@ -581,11 +581,13 @@ def build_llm_decision_prompt(user, top_interest):
     - Current time: {time}
     - Their top interest: {top_interest}
     - Free hours: {user.get("free_hours", "Unknown")}
+    - Location: {user_context['location']['city']}
     
     Consider:
     - If it's late evening, raining, or very hot, indoor might be better
     - If it's morning or daytime with good weather, outdoor might be better
     - Also consider the interest - some activities like gaming are typically indoor
+    - Also consider the location of the user
     """
     return prompt.strip()
 
@@ -603,9 +605,10 @@ def build_llm_prompt_indoor(user, top_interest, user_feedback=None):
     - Current time: {user.get("current_time", "Unknown")}
     - I have {user.get("free_hours", "Unknown")} free hours
     - My top interest right now: {top_interest}
+    - My city right now: {user_context['location']['city']}
     
-    Make your response 1-2 short, fun, personal sentences that help me decide what to do right now.
-    Be specific and practical. Recommend something realistic, not generic.
+    Make your response in 1-2 short, fun, personal sentences that help me decide what to do right now.
+    Be specific and practical. Recommend something realistic, not generic. Your output would be displayed on the lockscreen of the users phone
     """
     return prompt.strip()
 
@@ -640,7 +643,7 @@ def fetch_places(user, interest_type, api_key):
         # Search for places
         places_result = gmaps.places_nearby(
             location=(lat, lon),
-            radius=3000,  # 3km radius
+            radius=20000,  # 20km radius
             type=place_type,
             open_now=True
         )
@@ -750,7 +753,7 @@ def get_detailed_suggestion(user, model, short_description, interest_type):
         Current time: {user.get("current_time", "Unknown")}
         Free hours: {user.get("free_hours", "Unknown")}
         
-        Provide 3-4 paragraphs with:
+        Provide 5-6 sentences with:
         1. More details about this specific activity
         2. Why it's a good fit for the user now
         3. Specific things to look for or enjoy
@@ -913,7 +916,7 @@ Here are some options nearby:
 
         prompt += """
 Based on this context and the user's preferences history, choose the best one and explain why it's a good fit right now.
-Make your response 1-2 short, fun, personal sentences that could show up on a phone lockscreen.
+Make your response in not more than 1-2 short, fun, personal sentences that could show up on a phone lockscreen.
 """
 
         response = model.generate_content(prompt)
