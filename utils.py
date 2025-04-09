@@ -583,10 +583,10 @@ def top_activity_interest_llm(user):
     You are a smart assistant that ranks user interests in the context of the moment.
 
     User Context:
-    - City: {user_context['location']['city']}
-    - Weather: {user_context['weather']}
-    - Current Time: {user_context['current_time']}
-    - Free Hours: {user_context['free_hours']}
+    - City: {user['location']['city']}
+    - Weather: {user['weather']}
+    - Current Time: {user['current_time']}
+    - Free Hours: {user['free_hours']}
     - Interests (with scores): {adjusted_interests}
 
     Based on this context, rank the categories from most to least relevant **for recommending an activity right now**.
@@ -621,7 +621,7 @@ def build_llm_decision_prompt(user, top_interest):
     - Current time: {time}
     - Their top interest: {top_interest}
     - Free hours: {user.get("free_hours", "Unknown")}
-    - Location: {user_context['location']['city']}
+    - Location: {user['location']['city']}
     
     Consider:
     - If it's late evening, raining, or very hot, indoor might be better
@@ -645,7 +645,7 @@ def build_llm_prompt_indoor(user, top_interest, user_feedback=None):
     - Current time: {user.get("current_time", "Unknown")}
     - I have {user.get("free_hours", "Unknown")} free hours
     - My top interest right now: {top_interest}
-    - My city right now: {user_context['location']['city']}
+    - My city right now: {user['location']['city']}
     
     Make your response in 1-2 short, fun, personal sentences that help me decide what to do right now.
     Be specific and practical. Recommend something realistic, not generic. Your output would be displayed on the lockscreen of the users phone
