@@ -431,7 +431,7 @@ if "recommendation_data" in st.session_state:
         update_preferences_from_feedback("view_details", item_data)
     
         # Get detailed suggestion
-        detailed, map_html = get_detailed_suggestion(
+        detailed, maps_html = get_detailed_suggestion(
             user,
             model,
             st.session_state.last_short_response,
@@ -439,10 +439,10 @@ if "recommendation_data" in st.session_state:
             st.session_state.recommendation_data  # Pass the recommendation data
         )
         st.markdown(f"### 📖 More details:\n\n{detailed}")
-    
-    # Display map if available
-    if map_html:
-        st.markdown(map_html, unsafe_allow_html=True)
+        
+        # Display maps link if available
+        if maps_html:
+            st.markdown(maps_html, unsafe_allow_html=True)
 
 # Display errors if any occurred
 if "errors" in st.session_state and st.session_state.errors:
