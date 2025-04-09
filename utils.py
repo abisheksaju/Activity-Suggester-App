@@ -91,7 +91,7 @@ def get_synthetic_user():
             {"event": "Office Meeting", "start": "4 PM", "end": "6:30 PM"}
         ],
         # Calculate free hours based on current time and next calendar event
-        free_hours = calculate_free_time(current_time,calendar),
+        "free_hours" = calculate_free_time(current_time,calendar),
         "interests": {
             "travel": 0.91,
             "food": 0.18,
