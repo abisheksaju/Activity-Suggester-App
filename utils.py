@@ -77,7 +77,12 @@ def init_clients(openroute_api_key, google_maps_api_key):
 def get_synthetic_user():
     # This is a placeholder function that returns synthetic user data
     # In a real app, you would get this data from the user's actual context
-    return {
+    """
+    Return synthetic user data with automatically calculated free hours
+    based on calendar and current time.
+    """
+    # Define the user's base information
+    user_data = {
         "location": {
             "city": "Bangalore",
             "lat": 12.9716,
@@ -90,8 +95,6 @@ def get_synthetic_user():
             {"event": "Lunch with friend", "start": "1 PM", "end": "2 PM"},
             {"event": "Office Meeting", "start": "4 PM", "end": "6:30 PM"}
         ],
-        # Calculate free hours based on current time and next calendar event
-        "free_hours" : calculate_free_time(current_time,calendar),
         "interests": {
             "travel": 0.91,
             "food": 0.18,
@@ -102,6 +105,14 @@ def get_synthetic_user():
             "fitness": 0.40
         }
     }
+    
+    # Calculate free hours based on current time and calendar
+    user_data["free_hours"] = calculate_free_time(
+        user_data["current_time"], 
+        user_data["calendar"]
+    )
+    
+    return user_data
 
 def extract_main_keywords(text):
     """
