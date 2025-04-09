@@ -779,7 +779,7 @@ def fetch_place_image(place, api_key):
         logger.error(f"Error fetching place image: {str(e)}")
         return None
 
-def get_detailed_suggestion(user, model, short_description, interest_type):
+def get_detailed_suggestion(user, model, short_description, interest_type, recommendation_data=None):
     """
     Get detailed information about a suggestion
     """
@@ -801,10 +801,32 @@ def get_detailed_suggestion(user, model, short_description, interest_type):
         """
         
         response = model.generate_content(prompt)
-        return response.text.strip()
+        detailed_response = response.text.strip()
+        
+        # If it's an outdoor activity and we have place data, add Google Maps embed
+        map_html = ""
+        if recommendation_data and recommendation_data.get("type") == "outdoor" and recommendation_data.get("place"):
+            place = recommendation_data.get("place")
+            if place.get("geometry") and place["geometry"].get("location"):
+                lat = place["geometry"]["location"]["lat"]
+                lng = place["geometry"]["location"]["lng"]
+                place_name = place.get("name", "Location")
+                
+                # Create Google Maps embed HTML
+                map_html = f"""
+                <div style="margin-top: 20px; margin-bottom: 20px;">
+                    <h4>📍 Map Location</h4>
+                    <iframe width="100%" height="300" frameborder="0" style="border:0" 
+                    src="https://www.google.com/maps/embed/v1/place?key={st.session_state.GOOGLE_MAPS_API_KEY}
+                    &q={lat},{lng}&zoom=15" allowfullscreen></iframe>
+                    <small>📌 {place_name}</small>
+                </div>
+                """
+        
+        return detailed_response, map_html
     except Exception as e:
-        logger.error(f"Error getting detailed suggestion: {str(e)}")
-        return "I'm sorry, I couldn't generate additional details right now."
+        logging.error(f"Error getting detailed suggestion: {str(e)}")
+        return "I'm sorry, I couldn't generate additional details right now.", ""
 
 # User preferences functions
 def get_user_preferences_db():
