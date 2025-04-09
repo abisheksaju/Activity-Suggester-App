@@ -89,7 +89,7 @@ def get_synthetic_user():
             "lon": 77.5946
         },
         "weather": "Clear",
-        "current_time": "Friday 2:01 PM",
+        "current_time": "Friday 2:00 PM",
         #"free_hours": 4,
         "calendar": [
             {"event": "Lunch with friend", "start": "1 PM", "end": "2 PM"},
@@ -1088,88 +1088,24 @@ def calculate_free_time(current_time_str, calendar_events, max_hours=6):
                 continue
                 
             # Parse event start time
-            start_hour, start_minute = 0, 0
-            if ":" in event_start:
-                # Format like "1:30 PM"
-                start_parts = event_start.split(":")
-                start_hour = int(start_parts[0])
-                
-                # Extract minutes from the second part which may contain AM/PM
-                start_minute_part = start_parts[1].split()[0]
-                start_minute = int(start_minute_part)
-                
-                # Check for AM/PM
-                if "PM" in event_start.upper() and start_hour < 12:
-                    start_hour += 12
-                elif "AM" in event_start.upper() and start_hour == 12:
-                    start_hour = 0
-            else:
-                # Format like "1 PM"
-                start_hour_part = event_start.split()[0]
-                start_hour = int(start_hour_part)
-                
-                # Check for AM/PM
-                if "PM" in event_start.upper() and start_hour < 12:
-                    start_hour += 12
-                elif "AM" in event_start.upper() and start_hour == 12:
-                    start_hour = 0
+            start_minutes = parse_time_to_minutes(event_start)
             
             # Parse event end time if available
-            end_hour, end_minute = 23, 59  # Default to end of day
+            end_minutes = 23 * 60 + 59  # Default to end of day
             if event_end:
-                if ":" in event_end:
-                    # Format like "6:30 PM"
-                    end_parts = event_end.split(":")
-                    end_hour = int(end_parts[0])
-                    
-                    # Extract minutes from the second part which may contain AM/PM
-                    end_minute_part = end_parts[1].split()[0]
-                    end_minute = int(end_minute_part)
-                    
-                    # Check for AM/PM
-                    if "PM" in event_end.upper() and end_hour < 12:
-                        end_hour += 12
-                    elif "AM" in event_end.upper() and end_hour == 12:
-                        end_hour = 0
-                else:
-                    # Format like "6 PM"
-                    end_hour_part = event_end.split()[0]
-                    end_hour = int(end_hour_part)
-                    
-                    # Check for AM/PM
-                    if "PM" in event_end.upper() and end_hour < 12:
-                        end_hour += 12
-                    elif "AM" in event_end.upper() and end_hour == 12:
-                        end_hour = 0
-            
-            # Convert to minutes since midnight
-            start_time_minutes = start_hour * 60 + start_minute
-            end_time_minutes = end_hour * 60 + end_minute
+                end_minutes = parse_time_to_minutes(event_end)
             
             # Check if user is currently in an event
-            if start_time_minutes <= current_time_minutes <= end_time_minutes:
+            # Key fix here: Use < end_minutes instead of <= end_minutes
+            # This means the user is considered free exactly at the end time of an event
+            if start_minutes <= current_time_minutes < end_minutes:
                 is_in_event = True
-                # Free time starts after this event ends
-                next_free_start = end_time_minutes
-                
-                # But there might be another event right after this one
-                for other_event in calendar_events:
-                    other_start = other_event.get("start", "")
-                    if not other_start:
-                        continue
-                    
-                    # Parse other event start time
-                    other_start_minutes = parse_time_to_minutes(other_start)
-                    
-                    # If another event starts exactly when this one ends or later today
-                    if other_start_minutes >= next_free_start and other_start_minutes > current_time_minutes:
-                        if next_event_minutes is None or other_start_minutes < next_event_minutes:
-                            next_event_minutes = other_start_minutes
+                break
             
             # If not in an event, check if this is the next upcoming event
-            elif start_time_minutes > current_time_minutes:
-                if next_event_minutes is None or start_time_minutes < next_event_minutes:
-                    next_event_minutes = start_time_minutes
+            elif start_minutes > current_time_minutes:
+                if next_event_minutes is None or start_minutes < next_event_minutes:
+                    next_event_minutes = start_minutes
         
         # Calculate free hours
         if is_in_event:
