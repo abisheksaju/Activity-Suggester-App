@@ -83,8 +83,8 @@ def get_synthetic_user():
             "lat": 12.9716,
             "lon": 77.5946
         },
-        "weather": "Rainy",
-        "current_time": "Saturday 7 PM",
+        "weather": "Cloudy",
+        "current_time": "Saturday 3 PM",
         "free_hours": 4,
         "calendar": [
             {"event": "Lunch with friend", "start": "1 PM", "end": "2 PM"},
@@ -839,10 +839,10 @@ def get_user_preferences_db():
     if "user_preferences" not in st.session_state:
         st.session_state.user_preferences = {
             "category_preferences": {
-                "food": 0.8,
-                "travel": 0.6,
+                "food": 0.6,
+                "travel": 0.5,
                 "shopping": 0.5,
-                "gaming": 0.5,
+                "gaming": 0.8,
                 "news": 0.5
             },
             "liked_places": [],
