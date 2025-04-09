@@ -346,32 +346,32 @@ if "recommendation_data" in st.session_state:
     with col2:
         if st.button("👎 Show me something else"):
         # Update user preferences with dislike
-        item_data = {
-            "name": data.get("name", "Unknown"),
-            "type": data.get("activity_type", "Unknown")
-        }
-        update_preferences_from_feedback("dislike", item_data)
+            item_data = {
+                "name": data.get("name", "Unknown"),
+                "type": data.get("activity_type", "Unknown")
+            }
+            update_preferences_from_feedback("dislike", item_data)
         
-        # Add to disliked places list if it was an outdoor place
-        if data.get("type") == "outdoor" and "place" in data and "place_id" in data["place"]:
-            if "disliked_places_ids" not in st.session_state:
-                st.session_state.disliked_places_ids = []
-            st.session_state.disliked_places_ids.append(data["place"]["place_id"])
+            # Add to disliked places list if it was an outdoor place
+            if data.get("type") == "outdoor" and "place" in data and "place_id" in data["place"]:
+                if "disliked_places_ids" not in st.session_state:
+                    st.session_state.disliked_places_ids = []
+                st.session_state.disliked_places_ids.append(data["place"]["place_id"])
+                
+            # Store feedback to use in next recommendation
+            st.session_state.user_feedback = "The user did not like the previous suggestion. Please provide a completely different recommendation."
             
-        # Store feedback to use in next recommendation
-        st.session_state.user_feedback = "The user did not like the previous suggestion. Please provide a completely different recommendation."
-        
-        # Update the top interest after preference change
-        st.session_state.top_interest = top_activity_interest_llm(user)
-        
-        # Reset recommendation to get new one
-        st.session_state.recommendation_shown = False
-        
-        # Clear any activity type decision to allow reconsideration
-        if "activity_type" in st.session_state:
-            del st.session_state.activity_type
+            # Update the top interest after preference change
+            st.session_state.top_interest = top_activity_interest_llm(user)
             
-        st.rerun()
+            # Reset recommendation to get new one
+            st.session_state.recommendation_shown = False
+            
+            # Clear any activity type decision to allow reconsideration
+            if "activity_type" in st.session_state:
+                del st.session_state.activity_type
+                
+            st.rerun()
 
     # Know More button
     if st.button("🔎 Tell me more"):
