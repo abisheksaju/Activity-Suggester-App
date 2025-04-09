@@ -93,7 +93,7 @@ def get_synthetic_user():
         #"free_hours": 4,
         "calendar": [
             {"event": "Lunch with friend", "start": "1 PM", "end": "2 PM"},
-            {"event": "Office Meeting", "start": "4 PM", "end": "6:30 PM"}
+            {"event": "Office Meeting", "start": "4 PM", "end": "6:00 PM"}
         ],
         "interests": {
             "travel": 0.91,
