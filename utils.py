@@ -85,7 +85,12 @@ def get_synthetic_user():
         },
         "weather": "Clear",
         "current_time": "Saturday 8 AM",
-        "free_hours": 4,
+        #"free_hours": 4,
+        # Calculate free hours based on current time and next calendar event
+        free_hours = calculate_free_time(
+                        user_data["current_time"], 
+                        user_data["calendar"]
+                    ),
         "calendar": [
             {"event": "Lunch with friend", "start": "1 PM", "end": "2 PM"},
             {"event": "Office Meeting", "start": "4 PM", "end": "6:30 PM"}
@@ -1012,6 +1017,81 @@ def get_llm_prompt_with_history(base_prompt, suggestion_type):
     
     return base_prompt
 
+def calculate_free_time(current_time_str, calendar_events, max_hours=6):
+    """
+    Calculate free time until next calendar event, with a maximum limit.
+    
+    Args:
+        current_time_str: String representing current time (e.g., "Saturday 8 AM")
+        calendar_events: List of calendar events with start and end times
+        max_hours: Maximum number of free hours to return (default: 6)
+        
+    Returns:
+        Number of free hours (integer) until next event, capped at max_hours
+    """
+    try:
+        # Parse the current time string
+        # Expected format: "Day of week Hour AM/PM" (e.g., "Saturday 8 AM")
+        time_parts = current_time_str.split()
+        if len(time_parts) < 2:
+            return max_hours  # Default to max if parsing fails
+        
+        # Extract hour and AM/PM
+        hour_str = time_parts[-2]
+        am_pm = time_parts[-1].upper()
+        
+        # Convert hour to 24-hour format
+        try:
+            hour = int(hour_str)
+            if am_pm == "PM" and hour < 12:
+                hour += 12
+            elif am_pm == "AM" and hour == 12:
+                hour = 0
+        except ValueError:
+            return max_hours  # Default to max if parsing fails
+        
+        # Find the next event
+        next_event_hour = None
+        for event in calendar_events:
+            event_start = event.get("start", "")
+            if not event_start:
+                continue
+                
+            # Parse event start time
+            event_parts = event_start.split()
+            if len(event_parts) < 2:
+                continue
+                
+            event_hour_str = event_parts[0]
+            event_am_pm = event_parts[1].upper()
+            
+            try:
+                event_hour = int(event_hour_str)
+                if event_am_pm == "PM" and event_hour < 12:
+                    event_hour += 12
+                elif event_am_pm == "AM" and event_hour == 12:
+                    event_hour = 0
+                    
+                # Check if this event is in the future
+                if event_hour > hour:
+                    if next_event_hour is None or event_hour < next_event_hour:
+                        next_event_hour = event_hour
+            except ValueError:
+                continue
+        
+        # Calculate free hours
+        if next_event_hour is None:
+            # No future events today
+            return max_hours
+        else:
+            free_hours = next_event_hour - hour
+            return min(max(free_hours, 0), max_hours)
+            
+    except Exception as e:
+        # If anything goes wrong, return the maximum
+        logging.error(f"Error calculating free time: {str(e)}")
+        return max_hours
+
 # Enhanced version of choose_place with better error handling
 @safe_api_call
 def choose_place(user, places, model, user_feedback=None):
@@ -1059,7 +1139,7 @@ def choose_place(user, places, model, user_feedback=None):
 
         personalized_context = build_personalized_context(user, top_interest)
 
-        for idx, place in enumerate(places[:3]):
+        for idx, place in enumerate(places[:5]):
             try:
                 place_lat = place["geometry"]["location"]["lat"]
                 place_lon = place["geometry"]["location"]["lng"]
