@@ -803,27 +803,30 @@ def get_detailed_suggestion(user, model, short_description, interest_type, recom
         response = model.generate_content(prompt)
         detailed_response = response.text.strip()
         
-        # If it's an outdoor activity and we have place data, add Google Maps embed
-        map_html = ""
+        # If it's an outdoor activity and we have place data, add Google Maps link
+        maps_link = ""
         if recommendation_data and recommendation_data.get("type") == "outdoor" and recommendation_data.get("place"):
             place = recommendation_data.get("place")
-            if place.get("geometry") and place["geometry"].get("location"):
-                lat = place["geometry"]["location"]["lat"]
-                lng = place["geometry"]["location"]["lng"]
+            if place.get("place_id"):
+                place_id = place.get("place_id")
                 place_name = place.get("name", "Location")
+                maps_link = f"https://www.google.com/maps/place/?q=place_id:{place_id}"
                 
-                # Create Google Maps embed HTML
-                map_html = f"""
+                # Create a button to open Google Maps
+                maps_html = f"""
                 <div style="margin-top: 20px; margin-bottom: 20px;">
                     <h4>📍 Map Location</h4>
-                    <iframe width="100%" height="300" frameborder="0" style="border:0" 
-                    src="https://www.google.com/maps/embed/v1/place?key={st.session_state.GOOGLE_MAPS_API_KEY}
-                    &q={lat},{lng}&zoom=15" allowfullscreen></iframe>
-                    <small>📌 {place_name}</small>
+                    <a href="{maps_link}" target="_blank">
+                        <button style="background-color: #4285F4; color: white; padding: 10px 15px; 
+                        border: none; border-radius: 5px; cursor: pointer;">
+                            Open {place_name} in Google Maps
+                        </button>
+                    </a>
                 </div>
                 """
+                return detailed_response, maps_html
         
-        return detailed_response, map_html
+        return detailed_response, ""
     except Exception as e:
         logging.error(f"Error getting detailed suggestion: {str(e)}")
         return "I'm sorry, I couldn't generate additional details right now.", ""
