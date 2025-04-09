@@ -948,7 +948,7 @@ def choose_place(user, places, model, user_feedback=None):
 
         # Create a prompt with summaries of the place options
         prompt = f"""
-{feedback_note}You're a helpful assistant helping a user decide what to do next.
+{feedback_note}You're a helpful assistant helping a user decide which is the best place to visit.
 
 User preferences:
 - Weather: {user.get("weather", "Unknown")}
@@ -971,6 +971,7 @@ Here are some options nearby:
 Based on this context and the user's preferences history, choose the best one and the information about that place should only be mentioned and explain why it's a good fit right now.
 Make your response in not more than 1-2 short, fun, personal sentences that could show up on a phone lockscreen.
 Also mention the specific name of the place you're recommending. 
+Example if there is ISCKON and Lalbagh coming in the same answer, we should show any one of these only.
 """
 
         response = model.generate_content(prompt)
