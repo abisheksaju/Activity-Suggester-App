@@ -222,68 +222,73 @@ if "recommendation_shown" not in st.session_state or not st.session_state.recomm
                         "image_url": None,
                         "activity_type": top_interest
                     }
-                    st.session_state.errors.append(f"Error creating indoor suggestion: {str(e)}")
-            # Outdoor flow
-            else:
-                try:
-                    # Fetch places from Google Maps
-                    places = fetch_places(user, top_interest, st.session_state.GOOGLE_MAPS_API_KEY)
+                    st.session_state.errors.append(f"Error creating indoor suggestion: {str(e)}")# Outdoor flow
+else:
+    try:
+        # Fetch places from Google Maps
+        places = fetch_places(user, top_interest, st.session_state.GOOGLE_MAPS_API_KEY)
 
-                    # Choose one - pass user feedback to the LLM
-                    selected_place, description = choose_place(user, places, model, st.session_state.user_feedback)
-                    if selected_place:
-                        try:
-                            image_url = fetch_place_image(selected_place, st.session_state.GOOGLE_MAPS_API_KEY)
-                        except Exception as e:
-                            logging.error(f"Error fetching place image: {str(e)}")
-                            image_url = None
+        # Choose one - pass user feedback to the LLM
+        selected_place, description = choose_place(user, places, model, st.session_state.user_feedback)
+        if selected_place:
+            try:
+                image_url = fetch_place_image(selected_place, st.session_state.GOOGLE_MAPS_API_KEY)
+                
+                # Make sure place name is mentioned in the description for clarity
+                place_name = selected_place.get("name", "Unknown place")
+                if place_name not in description:
+                    description = f"Check out {place_name}! {description}"
+                    
+            except Exception as e:
+                logging.error(f"Error fetching place image: {str(e)}")
+                image_url = None
 
-                        st.session_state.recommendation_data = {
-                            "type": "outdoor",
-                            "place": selected_place,
-                            "name": selected_place.get("name", "Unknown place"),
-                            "description": description,
-                            "image_url": image_url,
-                            "activity_type": top_interest
-                        }
-                        st.session_state.last_short_response = description
-                    else:
-                        # Fallback to indoor if no outdoor places found
-                        logging.warning("No outdoor places found, falling back to indoor")
-                        response = model.generate_content(build_llm_prompt_indoor(user, top_interest, st.session_state.user_feedback))
-                        activity_description = response.text.strip()
+            st.session_state.recommendation_data = {
+                "type": "outdoor",
+                "place": selected_place,
+                "name": selected_place.get("name", "Unknown place"),
+                "description": description,
+                "image_url": image_url,
+                "activity_type": top_interest
+            }
+            st.session_state.last_short_response = description
+        else:
+            # Fallback to indoor if no outdoor places found
+            logging.warning("No outdoor places found, falling back to indoor")
+            response = model.generate_content(build_llm_prompt_indoor(user, top_interest, st.session_state.user_feedback))
+            activity_description = response.text.strip()
 
-                        # Extract keywords and fetch related image
-                        main_keyword = extract_main_keywords(activity_description)
-                        image_url = None
+            # Extract keywords and fetch related image
+            main_keyword = extract_main_keywords(activity_description)
+            image_url = None
 
-                        try:
-                            if main_keyword:
-                                image_url = fetch_image_for_keyword(main_keyword, st.session_state.GOOGLE_MAPS_API_KEY)
-                        except Exception as e:
-                            logging.error(f"Error fetching indoor fallback image: {str(e)}")
+            try:
+                if main_keyword:
+                    image_url = fetch_image_for_keyword(main_keyword, st.session_state.GOOGLE_MAPS_API_KEY)
+            except Exception as e:
+                logging.error(f"Error fetching indoor fallback image: {str(e)}")
 
-                        st.session_state.last_short_response = activity_description
-                        st.session_state.recommendation_data = {
-                            "type": "indoor",
-                            "name": f"Indoor {top_interest} Activity",
-                            "description": activity_description,
-                            "image_url": image_url,
-                            "activity_type": top_interest,
-                            "keyword": main_keyword
-                        }
-                except Exception as e:
-                    logging.error(f"Error in outdoor flow: {str(e)}")
-                    traceback.print_exc()
-                    # Emergency fallback
-                    st.session_state.recommendation_data = {
-                        "type": "indoor",
-                        "name": "Activity Suggestion",
-                        "description": "We recommend trying something fun related to your interests!",
-                        "image_url": None,
-                        "activity_type": "activity"
-                    }
-                    st.session_state.errors.append(f"Error creating outdoor suggestion: {str(e)}")
+            st.session_state.last_short_response = activity_description
+            st.session_state.recommendation_data = {
+                "type": "indoor",
+                "name": f"Indoor {top_interest} Activity",
+                "description": activity_description,
+                "image_url": image_url,
+                "activity_type": top_interest,
+                "keyword": main_keyword
+            }
+    except Exception as e:
+        logging.error(f"Error in outdoor flow: {str(e)}")
+        traceback.print_exc()
+        # Emergency fallback
+        st.session_state.recommendation_data = {
+            "type": "indoor",
+            "name": "Activity Suggestion",
+            "description": "We recommend trying something fun related to your interests!",
+            "image_url": None,
+            "activity_type": "activity"
+        }
+        st.session_state.errors.append(f"Error creating outdoor suggestion: {str(e)}")
 
             # Reset user feedback after using it
             if st.session_state.user_feedback:
@@ -336,19 +341,35 @@ if "recommendation_data" in st.session_state:
             st.balloons()
             st.success("Great! I'll remember you liked this for future recommendations!")
 
-    with col2:
-        if st.button("👎 Show me something else"):
-            # Update user preferences with dislike
-            item_data = {
-                "name": data.get("name", "Unknown"),
-                "type": data.get("activity_type", "Unknown")
-            }
-            update_preferences_from_feedback("dislike", item_data)
-            # Store feedback to use in next recommendation
-            st.session_state.user_feedback = "The user did not like the previous suggestion. Please provide a completely different recommendation."
-            st.session_state.top_interest = top_activity_interest_llm(user)
-            st.session_state.recommendation_shown = False
-            st.rerun()
+   with col2:
+    if st.button("👎 Show me something else"):
+        # Update user preferences with dislike
+        item_data = {
+            "name": data.get("name", "Unknown"),
+            "type": data.get("activity_type", "Unknown")
+        }
+        update_preferences_from_feedback("dislike", item_data)
+        
+        # Add to disliked places list if it was an outdoor place
+        if data.get("type") == "outdoor" and "place" in data and "place_id" in data["place"]:
+            if "disliked_places_ids" not in st.session_state:
+                st.session_state.disliked_places_ids = []
+            st.session_state.disliked_places_ids.append(data["place"]["place_id"])
+            
+        # Store feedback to use in next recommendation
+        st.session_state.user_feedback = "The user did not like the previous suggestion. Please provide a completely different recommendation."
+        
+        # Update the top interest after preference change
+        st.session_state.top_interest = top_activity_interest_llm(user)
+        
+        # Reset recommendation to get new one
+        st.session_state.recommendation_shown = False
+        
+        # Clear any activity type decision to allow reconsideration
+        if "activity_type" in st.session_state:
+            del st.session_state.activity_type
+            
+        st.rerun()
 
     # Know More button
     if st.button("🔎 Tell me more"):
