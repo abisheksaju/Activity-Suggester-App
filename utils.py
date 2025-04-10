@@ -100,9 +100,7 @@ def get_synthetic_user():
             "food": 0.18,
             "news": 0.15,
             "shopping": 0.13,
-            "gaming": 0.24,
-            "sports": 0.40,
-            "fitness": 0.40
+            "gaming": 0.24
         }
     }
     
