@@ -858,10 +858,7 @@ def get_user_preferences_db():
                 "travel": 0.6,
                 "shopping": 0.5,
                 "gaming": 0.5,
-                "news": 0.5,
-                "sports": 0.6,
-                "fitness": 0.7,
-                "pets": 0.5
+                "news": 0.5
             },
             "liked_places": [],
             "disliked_places": []
