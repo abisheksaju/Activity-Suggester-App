@@ -852,8 +852,8 @@ def get_user_preferences_db():
     if "user_preferences" not in st.session_state:
         st.session_state.user_preferences = {
             "category_preferences": {
-                "food": 0.8,
-                "travel": 0.6,
+                "food": 0.6,
+                "travel": 0.9,
                 "shopping": 0.5,
                 "gaming": 0.5,
                 "news": 0.5
