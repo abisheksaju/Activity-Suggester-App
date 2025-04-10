@@ -89,7 +89,7 @@ def get_synthetic_user():
             "lon": 77.5946
         },
         "weather": "Rainy",
-        "current_time": "Saturday 2 AM",
+        "current_time": "Saturday 8 AM",
         #"free_hours": 4,
         "calendar": [
             {"event": "Lunch with friend", "start": "1 PM", "end": "2 PM"},
@@ -686,7 +686,8 @@ def fetch_places(user, interest_type, api_key):
             'shopping': 'shopping_mall',
             'travel': 'tourist_attraction',
             'news': 'library',
-            'gaming': 'amusement_park'
+            'gaming': 'amusement_park',
+            'cooking': 'kitchen'
         }
         
         # Get place type from interest
@@ -852,12 +853,13 @@ def get_user_preferences_db():
     if "user_preferences" not in st.session_state:
         st.session_state.user_preferences = {
             "category_preferences": {
-                "food": 0.6,
-                "travel": 0.9,
+                "food": 0.8,
+                "travel": 0.5,
                 "shopping": 0.5,
                 "gaming": 0.5,
                 "news": 0.5,
-                "fitness": 0.7
+                "fitness": 0.7,
+                "cooking": 0.9
             },
             "liked_places": [],
             "disliked_places": []
