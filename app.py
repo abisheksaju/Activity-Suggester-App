@@ -374,7 +374,7 @@ if "recommendation_data" in st.session_state:
         st.write(f"**Weather:** {user.get('weather', 'Unknown')}")
         st.write(f"**Free Hours Available:** {user.get('free_hours', 'Unknown')} hours")
 
-        if user.get("calendar"):
+    if user.get("calendar"):
         st.markdown("**📅 Today's Events:**")
         for event in user["calendar"]:
             st.write(f"- **{event['event']}** from `{event['start']}` to `{event['end']}`")
