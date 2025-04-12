@@ -370,6 +370,14 @@ if "recommendation_data" in st.session_state:
     # Display image if available (for both indoor and outdoor activities)
     if data.get("image_url"):
         st.image(data["image_url"], use_container_width=True)
+        st.markdown("### 🌤️ Your Current Context")
+        st.write(f"**Weather:** {user.get('weather', 'Unknown')}")
+        st.write(f"**Free Hours Available:** {user.get('free_hours', 'Unknown')} hours")
+
+        if user.get("calendar"):
+        st.markdown("**📅 Today's Events:**")
+        for event in user["calendar"]:
+            st.write(f"- **{event['event']}** from `{event['start']}` to `{event['end']}`")
 
     st.subheader("🔍 Suggested Activity")
     st.write(data["description"])
