@@ -370,15 +370,30 @@ if "recommendation_data" in st.session_state:
     # Display image if available (for both indoor and outdoor activities)
     if data.get("image_url"):
         st.image(data["image_url"], use_container_width=True)
-        st.markdown("### 🌤️ Your Current Context")
-        st.write(f"**Current Time:** {user.get('current_time', 'Unknown')}")
-        st.write(f"**Weather:** {user.get('weather', 'Unknown')}")
-        st.write(f"**Free Hours Available:** {user.get('free_hours', 'Unknown')} hours")
+        # Always show user context below the image
+        st.markdown("""
+        <div style="background-color: #f0f2f6; padding: 16px; border-radius: 12px; margin-top: 20px;">
+          <h4 style="margin-top: 0;">🌤️ Your Current Context</h4>
+          <ul style="padding-left: 1em; list-style: none;">
+            <li><strong>Weather:</strong> {weather}</li>
+            <li><strong>Current Time:</strong> {current_time}</li>
+            <li><strong>Free Hours Available:</strong> {free_hours} hours</li>
+          </ul>
+          <h5 style="margin-bottom: 0.5em;">📅 Today's Events:</h5>
+          <ul style="padding-left: 1em; list-style: disc;">
+            {calendar_items}
+          </ul>
+        </div>
+        """.format(
+            weather=user.get("weather", "Unknown"),
+            current_time=user.get("current_time", "Unknown"),
+            free_hours=user.get("free_hours", "Unknown"),
+            calendar_items="\n".join(
+                f"<li><strong>{event['event']}</strong> from {event['start']} to {event['end']}</li>"
+                for event in user.get("calendar", [])
+            )
+        ), unsafe_allow_html=True)
 
-    if user.get("calendar"):
-        st.markdown("**📅 Today's Events:**")
-        for event in user["calendar"]:
-            st.write(f"- **{event['event']}** from `{event['start']}` to `{event['end']}`")
 
     st.subheader("🔍 Suggested Activity")
     st.write(data["description"])
