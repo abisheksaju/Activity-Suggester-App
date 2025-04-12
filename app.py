@@ -371,6 +371,7 @@ if "recommendation_data" in st.session_state:
     if data.get("image_url"):
         st.image(data["image_url"], use_container_width=True)
         st.markdown("### 🌤️ Your Current Context")
+        st.write(f"**Current Time:** {user.get('current_time', 'Unknown')}")
         st.write(f"**Weather:** {user.get('weather', 'Unknown')}")
         st.write(f"**Free Hours Available:** {user.get('free_hours', 'Unknown')} hours")
 
