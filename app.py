@@ -4,13 +4,14 @@ from datetime import datetime
 import google.generativeai as genai
 import logging
 import traceback
-import chromadb
+# Remove ChromaDB import
 from langchain.globals import set_debug
 import json
 
 # Import from our modules
 from activity_graph import ActivitySuggesterGraph
-from chroma_manager import ChromaManager
+# from chroma_manager import ChromaManager  # Replace with JSONStorageManager
+from json_storage_manager import JSONStorageManager  # New import
 from image_utils import fetch_image_for_activity
 from api_utils import init_clients, safe_api_call
 from user_utils import get_synthetic_user, calculate_free_time
@@ -73,13 +74,13 @@ def initialize_app():
         # Initialize API clients
         ors_client, gmaps_client = init_clients(ORS_API_KEY, GOOGLE_MAPS_API_KEY)
         
-        # Initialize ChromaDB
-        chroma_manager = ChromaManager()
+        # Initialize JSONStorageManager instead of ChromaDB
+        storage_manager = JSONStorageManager()
         
         # Initialize LangGraph
         activity_graph = ActivitySuggesterGraph(
             model=model,
-            chroma_manager=chroma_manager,
+            chroma_manager=storage_manager,  # Pass JSONStorageManager here
             api_keys={
                 "google_maps": GOOGLE_MAPS_API_KEY,
                 "ors": ORS_API_KEY
@@ -90,7 +91,7 @@ def initialize_app():
         st.session_state.model = model
         st.session_state.ors_client = ors_client
         st.session_state.gmaps_client = gmaps_client
-        st.session_state.chroma_manager = chroma_manager
+        st.session_state.chroma_manager = storage_manager  # Keep variable name for compatibility
         st.session_state.activity_graph = activity_graph
         st.session_state.user_feedback = None
         st.session_state.errors = []
@@ -122,9 +123,9 @@ with tabs[0]:
         user = get_synthetic_user()
         st.session_state.user = user
         
-        # Store user in ChromaDB if not already there
-        chroma_manager = st.session_state.chroma_manager
-        chroma_manager.add_or_update_user(user["user_id"], user)
+        # Store user in storage if not already there
+        storage_manager = st.session_state.chroma_manager  # Using the same session state key
+        storage_manager.add_or_update_user(user["user_id"], user)
     else:
         user = st.session_state.user
     
@@ -216,8 +217,8 @@ with tabs[0]:
         
         with col1:
             if st.button("👍 I like it!"):
-                # Get chroma manager to update preferences
-                chroma_manager = st.session_state.chroma_manager
+                # Get storage manager to update preferences
+                storage_manager = st.session_state.chroma_manager
                 
                 # Prepare feedback data
                 feedback_data = {
@@ -230,16 +231,16 @@ with tabs[0]:
                     "timestamp": datetime.now().isoformat()
                 }
                 
-                # Add feedback to ChromaDB
-                chroma_manager.add_feedback(feedback_data)
+                # Add feedback to storage
+                storage_manager.add_feedback(feedback_data)
                 
                 st.balloons()
                 st.success("Great! I'll remember you liked this for future recommendations!")
         
         with col2:
             if st.button("👎 Show me something else"):
-                # Get chroma manager to update preferences
-                chroma_manager = st.session_state.chroma_manager
+                # Get storage manager to update preferences
+                storage_manager = st.session_state.chroma_manager
                 
                 # Prepare feedback data
                 feedback_data = {
@@ -252,8 +253,8 @@ with tabs[0]:
                     "timestamp": datetime.now().isoformat()
                 }
                 
-                # Add feedback to ChromaDB
-                chroma_manager.add_feedback(feedback_data)
+                # Add feedback to storage
+                storage_manager.add_feedback(feedback_data)
                 
                 # Store feedback to use in next recommendation
                 st.session_state.user_feedback = "The user did not like the previous suggestion. Please provide a completely different recommendation."
@@ -264,8 +265,8 @@ with tabs[0]:
         
         # Tell me more button
         if st.button("🔎 Tell me more"):
-            # Get chroma manager to update preferences
-            chroma_manager = st.session_state.chroma_manager
+            # Get storage manager to update preferences
+            storage_manager = st.session_state.chroma_manager
             
             # Prepare feedback data for view details action
             feedback_data = {
@@ -278,8 +279,8 @@ with tabs[0]:
                 "timestamp": datetime.now().isoformat()
             }
             
-            # Add feedback to ChromaDB
-            chroma_manager.add_feedback(feedback_data)
+            # Add feedback to storage
+            storage_manager.add_feedback(feedback_data)
             
             # Get activity graph to generate details
             activity_graph = st.session_state.activity_graph
@@ -312,14 +313,14 @@ with tabs[0]:
 
 # Tab 2: Admin Dashboard
 with tabs[1]:
-    st.header("ChromaDB Admin Dashboard")
+    st.header("Storage Admin Dashboard")
     
     # Simple authentication
     admin_password = st.text_input("Enter admin password", type="password")
     
     if admin_password == st.secrets.get("ADMIN_PASSWORD", "admin"):  # Use a real password in production
-        # Get the ChromaDB manager
-        chroma_manager = st.session_state.chroma_manager
+        # Get the storage manager
+        storage_manager = st.session_state.chroma_manager
         
         # Create tabs for different data views
         admin_tabs = st.tabs(["Users", "Activities", "Feedback", "Statistics"])
@@ -329,7 +330,7 @@ with tabs[1]:
             st.subheader("User Profiles")
             
             # Get all users
-            users = chroma_manager.get_all_users()
+            users = storage_manager.get_all_users()
             
             if users:
                 user_ids = [u['user_id'] for u in users]
@@ -342,7 +343,7 @@ with tabs[1]:
                     
                     # Option to delete user
                     if st.button("Delete User"):
-                        chroma_manager.delete_user(selected_user_id)
+                        storage_manager.delete_user(selected_user_id)
                         st.success(f"User {selected_user_id} deleted")
                         st.rerun()
             else:
@@ -353,7 +354,7 @@ with tabs[1]:
             st.subheader("Activity History")
             
             # Get all activities
-            activities = chroma_manager.get_all_activities()
+            activities = storage_manager.get_all_activities()
             
             if activities:
                 # Group by type
@@ -382,7 +383,7 @@ with tabs[1]:
             st.subheader("User Feedback")
             
             # Get all feedback
-            feedback = chroma_manager.get_all_feedback()
+            feedback = storage_manager.get_all_feedback()
             
             if feedback:
                 # Group by type
@@ -414,7 +415,7 @@ with tabs[1]:
             st.subheader("User Statistics")
             
             # Get statistics
-            stats = chroma_manager.get_statistics()
+            stats = storage_manager.get_statistics()
             
             # Display user preference stats
             st.write("### Interest Categories Popularity")
@@ -441,11 +442,11 @@ with tabs[1]:
             
             if st.button("Export as JSON"):
                 if export_type == "Users":
-                    data = chroma_manager.get_all_users()
+                    data = storage_manager.get_all_users()
                 elif export_type == "Activities":
-                    data = chroma_manager.get_all_activities()
+                    data = storage_manager.get_all_activities()
                 else:  # Feedback
-                    data = chroma_manager.get_all_feedback()
+                    data = storage_manager.get_all_feedback()
                 
                 # Create JSON string
                 json_data = json.dumps(data, indent=2)
@@ -468,11 +469,11 @@ st.sidebar.caption("Activity Planner App • v2.0")
 with st.sidebar:
     if "user" in st.session_state:
         user = st.session_state.user
-        chroma_manager = st.session_state.chroma_manager
+        storage_manager = st.session_state.chroma_manager
         
         with st.expander("📊 Your Preference Profile"):
-            # Get user preferences from ChromaDB
-            user_preferences = chroma_manager.get_user_preferences(user["user_id"])
+            # Get user preferences from storage
+            user_preferences = storage_manager.get_user_preferences(user["user_id"])
             
             # Show category preferences
             st.subheader("Category Preferences")
@@ -484,7 +485,7 @@ with st.sidebar:
             
             # Show recent likes
             st.subheader("Recent Likes")
-            recent_likes = chroma_manager.get_recent_feedback(user["user_id"], "like", limit=3)
+            recent_likes = storage_manager.get_recent_feedback(user["user_id"], "like", limit=3)
             if recent_likes:
                 for item in recent_likes:
                     st.write(f"- {item['activity_name']} ({item['interest_category']})")
@@ -493,7 +494,7 @@ with st.sidebar:
             
             # Show recent dislikes
             st.subheader("Recent Dislikes")
-            recent_dislikes = chroma_manager.get_recent_feedback(user["user_id"], "dislike", limit=3)
+            recent_dislikes = storage_manager.get_recent_feedback(user["user_id"], "dislike", limit=3)
             if recent_dislikes:
                 for item in recent_dislikes:
                     st.write(f"- {item['activity_name']} ({item['interest_category']})")
