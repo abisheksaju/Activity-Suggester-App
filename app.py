@@ -4,41 +4,32 @@ from datetime import datetime
 import google.generativeai as genai
 import logging
 import traceback
+import chromadb
+from langchain.globals import set_debug
+import json
 
-# Import from utils.py
-from utils import (
-    get_synthetic_user,
-    top_activity_interest_llm,
-    build_llm_decision_prompt,
-    build_llm_prompt_indoor,
-    fetch_places,
-    fetch_place_image,
-    choose_place,
-    get_detailed_suggestion,
-    init_clients,
-    update_preferences_from_feedback,
-    get_user_preferences_db,
-    extract_main_keywords,
-    fetch_image_for_keyword,
-    extract_keywords_from_prompt,  # New import
-    extract_food_keywords,  # New import
-    extract_nouns,  # New import
-    fetch_image_for_keyword,
-    fetch_unsplash_image,  # New import
-    fetch_google_images, extract_core_keyword, simplify_keyword,
-    # New imports for suggestion history
-    get_suggestion_history,
-    is_duplicate_suggestion,
-    add_to_suggestion_history,
-    get_llm_prompt_with_history,
-    calculate_free_time,
-    parse_time_to_minutes,
-    AppError, APIError, LLMError, ImageError
+# Import from our modules
+from activity_graph import ActivitySuggesterGraph
+from chroma_manager import ChromaManager
+from image_utils import fetch_image_for_activity
+from api_utils import init_clients, safe_api_call
+from user_utils import get_synthetic_user, calculate_free_time
+from config import SETTINGS
+
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+logger = logging.getLogger('activity_suggester')
 
+# Enable debug mode for LangChain
+set_debug(True)
+
+# Set page configuration
 st.set_page_config(page_title="Activity Suggester", layout="centered")
 
-# Inject custom CSS to position the title and improve UI
+# Inject custom CSS
 st.markdown("""
     <style>
     .custom-title {
@@ -58,477 +49,484 @@ st.markdown("""
         background-color: #f5f5f5;
         border-radius: 5px;
     }
+    /* Tab content spacing */
+    .stTabs [data-baseweb="tab-panel"] {
+        padding-top: 1rem;
+    }
     </style>
     <div class="custom-title">My Daily Activity Planner</div>
 """, unsafe_allow_html=True)
 
-# Initialize session state variables
-if "initialized" not in st.session_state:
-    # Load secrets
+# Initialize app state
+def initialize_app():
+    # Load API keys from secrets
     try:
-        GOOGLE_MAPS_API_KEY = st.secrets["GOOGLE_MAPS_API_KEY"]
-        GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
-        ORS_API_KEY = st.secrets["ORS_API_KEY"]
-
+        GOOGLE_MAPS_API_KEY = st.secrets.get("GOOGLE_MAPS_API_KEY", "demo_key")
+        GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "demo_key")
+        ORS_API_KEY = st.secrets.get("ORS_API_KEY", "demo_key")
+        
         # Configure Gemini model
         os.environ['GEMINI_API_KEY'] = GEMINI_API_KEY
         genai.configure(api_key=GEMINI_API_KEY)
         model = genai.GenerativeModel("gemini-1.5-flash")
-
-        # Initialize clients
+        
+        # Initialize API clients
         ors_client, gmaps_client = init_clients(ORS_API_KEY, GOOGLE_MAPS_API_KEY)
-
+        
+        # Initialize ChromaDB
+        chroma_manager = ChromaManager()
+        
+        # Initialize LangGraph
+        activity_graph = ActivitySuggesterGraph(
+            model=model,
+            chroma_manager=chroma_manager,
+            api_keys={
+                "google_maps": GOOGLE_MAPS_API_KEY,
+                "ors": ORS_API_KEY
+            }
+        )
+        
         # Store in session state
-        st.session_state.GOOGLE_MAPS_API_KEY = GOOGLE_MAPS_API_KEY
         st.session_state.model = model
         st.session_state.ors_client = ors_client
         st.session_state.gmaps_client = gmaps_client
+        st.session_state.chroma_manager = chroma_manager
+        st.session_state.activity_graph = activity_graph
         st.session_state.user_feedback = None
-        st.session_state.initialized = True
-
-        # Set up error tracking
         st.session_state.errors = []
+        
+        # Set initialization flag
+        st.session_state.initialized = True
+        
+        return True
     except Exception as e:
-        st.error(f"Error initializing app: {e}")
+        st.error(f"Error initializing app: {str(e)}")
+        st.error(traceback.format_exc())
+        return False
+
+# Check if app is initialized, if not, initialize it
+if "initialized" not in st.session_state:
+    if not initialize_app():
         st.stop()
 
-# Get model from session state
-model = st.session_state.model
-
-# App Header
+# Main app title
 st.title("What should I do now?")
 
-# Generate user context if not already in session
-if "user" not in st.session_state:
-    user = get_synthetic_user()
-    st.session_state.user = user
-else:
-    user = st.session_state.user
+# Tab for main recommendation and admin view
+tabs = st.tabs(["Activity Recommendations", "Admin Dashboard"])
 
-# Process recommendation when needed
-if "recommendation_shown" not in st.session_state or not st.session_state.recommendation_shown:
-    with st.spinner("Finding the perfect activity for you..."):
-        try:
-            # Call LLM to suggest top interest
-            if "top_interest" not in st.session_state:
-                try:
-                    top_interest = top_activity_interest_llm(user)
-                    st.session_state.top_interest = top_interest
-                except Exception as e:
-                    logging.error(f"Error getting top interest: {str(e)}")
-                    st.session_state.top_interest = "food"  # Default fallback
-                    st.session_state.errors.append(f"Error determining interest: {str(e)}")
-            else:
-                top_interest = st.session_state.top_interest
-
-            # Call second LLM to decide indoor or outdoor
-            try:
-                decision_prompt = build_llm_decision_prompt(user, top_interest)
-                decision_response = model.generate_content(decision_prompt)
-                decision = decision_response.text.strip().lower()
-                st.session_state.activity_type = decision
-            except Exception as e:
-                logging.error(f"Error determining indoor/outdoor: {str(e)}")
-                decision = "indoor"  # Default to indoor on error
-                st.session_state.activity_type = decision
-                st.session_state.errors.append(f"Error choosing activity type: {str(e)}")
-
-            # Indoor flow
-            if decision == "indoor":
-                try:
-                          # Enhance the prompt with history to avoid repetition
-                    base_prompt = build_llm_prompt_indoor(user, top_interest, st.session_state.user_feedback)
-                    enhanced_prompt = get_llm_prompt_with_history(base_prompt, "indoor")
-                    
-                    # Try up to 3 times to get a non-duplicate suggestion
-                    max_attempts = 3
-                    activity_description = None
-                    for attempt in range(max_attempts):
-                        response = model.generate_content(enhanced_prompt)
-                        activity_description = response.text.strip()
-                        
-                        # Check if it's a duplicate
-                        if not is_duplicate_suggestion(activity_description, "indoor"):
-                            # Not a duplicate, we can use this
-                            break
-                        
-                        # If it's a duplicate and not the last attempt, try again with stronger instruction
-                        if attempt < max_attempts - 1:
-                            logger.warning(f"Duplicate indoor suggestion detected, trying again (attempt {attempt+1})")
-                            enhanced_prompt += "\n\n❗ IMPORTANT: Your previous suggestion was too similar to one you've made before. Please suggest something COMPLETELY DIFFERENT."
-                    
-                    # Record the suggestion in history
-                    if activity_description:
-                        add_to_suggestion_history(activity_description, "indoor")
-                        st.session_state.last_short_response = activity_description
-                    
-                    response = model.generate_content(build_llm_prompt_indoor(user, top_interest, st.session_state.user_feedback))
-                    activity_description = response.text.strip()
-                    st.session_state.last_short_response = activity_description
-            
-                    # Extract keywords and fetch related image
-                    image_url = None
-                    main_keyword = None
-                    
-                    try:
-                        # First, try to extract keywords using the advanced method
-                        try:
-                            keywords = extract_keywords_from_prompt(activity_description)
-                            
-                            # Try each keyword until we find an image
-                            for keyword in keywords:
-                                if not keyword or len(keyword.strip()) < 3:
-                                    continue
-                                    
-                                logging.info(f"Trying to fetch image for keyword: {keyword}")
-                                try:
-                                    # Try with all available APIs
-                                    img_url = fetch_image_for_keyword(
-                                        keyword, 
-                                        st.session_state.GOOGLE_MAPS_API_KEY,
-                                        st.session_state.get('GOOGLE_CSE_ID'),
-                                        st.session_state.get('GOOGLE_CSE_API_KEY')
-                                    )
-                                    if img_url:
-                                        image_url = img_url
-                                        main_keyword = keyword
-                                        logging.info(f"Found image for keyword: {keyword}")
-                                        break
-                                except Exception as img_err:
-                                    logging.error(f"Error fetching image for '{keyword}': {str(img_err)}")
-                                    continue
-                        except Exception as kw_err:
-                            logging.error(f"Error extracting keywords: {str(kw_err)}")
-                            
-                        # If still no image, try with the backup method
-                        if not image_url:
-                            # Fall back to simple extraction
-                            main_keyword = extract_main_keywords(activity_description)
-                            if main_keyword and len(main_keyword) >= 3:
-                                logging.info(f"Trying fallback keyword: {main_keyword}")
-                                image_url = fetch_image_for_keyword(
-                                    main_keyword, 
-                                    st.session_state.GOOGLE_MAPS_API_KEY,
-                                    st.session_state.get('GOOGLE_CSE_ID'),
-                                    st.session_state.get('GOOGLE_CSE_API_KEY')
-                                )
-                            
-                        # Final direct fallback to Unsplash with core keyword extraction
-                        if not image_url and main_keyword:
-                            core_keyword = extract_core_keyword(main_keyword)
-                            logging.info(f"Trying core keyword: {core_keyword}")
-                            image_url = fetch_unsplash_image(core_keyword)
-                            main_keyword = core_keyword
-                            
-                        # Last resort - try with the interest type
-                        if not image_url:
-                            logging.info(f"Using interest type as keyword: {top_interest}")
-                            image_url = fetch_unsplash_image(top_interest)
-                            main_keyword = top_interest
-                            
-                    except Exception as e:
-                        logging.error(f"All image fetching methods failed: {str(e)}")
-                        image_url = None
-                        main_keyword = top_interest
-            
-                    # Debug logging
-                    if image_url:
-                        logging.info(f"Successfully found image URL: {image_url} for keyword: {main_keyword}")
-                    else:
-                        logging.error("Failed to find any image URL")
-            
-                    st.session_state.recommendation_data = {
-                        "type": "indoor",
-                        "name": f"Indoor {top_interest} Activity",
-                        "description": activity_description,
-                        "image_url": image_url,
-                        "activity_type": top_interest,
-                        "keyword": main_keyword if main_keyword else top_interest
-                    }
-                except Exception as e:
-                    logging.error(f"Error in indoor flow: {str(e)}")
-                    traceback.print_exc()
-                    st.session_state.recommendation_data = {
-                        "type": "indoor",
-                        "name": "Indoor Activity Suggestion",
-                        "description": "Try a fun indoor activity related to your interests!",
-                        "image_url": None,
-                        "activity_type": top_interest
-                    }
-                    st.session_state.errors.append(f"Error creating indoor suggestion: {str(e)}")
-                    
-           # Outdoor flow
-            else:        
-                try:
-                    # Fetch places from Google Maps
-                    places = fetch_places(user, top_interest, st.session_state.GOOGLE_MAPS_API_KEY)
-            
-                    # Choose one - pass user feedback to the LLM
-                    selected_place, description = choose_place(user, places, model, st.session_state.user_feedback)
-                    if selected_place:
-                        # Check if this place has been suggested before
-                        place_id = selected_place.get("place_id")
-                        if place_id and is_duplicate_suggestion(place_id, "outdoor"):
-                            # It's a duplicate, try again with a different place
-                            logger.warning("Duplicate outdoor place detected, trying to choose a different one")
-                            # Filter out this place_id
-                            filtered_places = [p for p in places if p.get("place_id") != place_id]
-                            if filtered_places:
-                                selected_place, description = choose_place(user, filtered_places, model, st.session_state.user_feedback)
-                        
-                        # Proceed with the selected place
-                        if selected_place:
-                            place_id = selected_place.get("place_id")
-                            # Add to history
-                            if place_id:
-                                add_to_suggestion_history(description, "outdoor", place_id)
-                                
-                            try:
-                                image_url = fetch_place_image(selected_place, st.session_state.GOOGLE_MAPS_API_KEY)
-                                
-                                # Make sure place name is mentioned in the description for clarity
-                                place_name = selected_place.get("name", "Unknown place")
-                                if place_name not in description:
-                                    description = f"Check out {place_name}! {description}"
-                                    
-                            except Exception as e:
-                                logging.error(f"Error fetching place image: {str(e)}")
-                                image_url = None
-                    
-                            st.session_state.recommendation_data = {
-                                "type": "outdoor",
-                                "place": selected_place,
-                                "name": selected_place.get("name", "Unknown place"),
-                                "description": description,
-                                "image_url": image_url,
-                                "activity_type": top_interest
-                            }
-                            st.session_state.last_short_response = description
-                    else:
-                        # Fallback to indoor if no outdoor places found
-                        logging.warning("No outdoor places found, falling back to indoor")
-                        response = model.generate_content(build_llm_prompt_indoor(user, top_interest, st.session_state.user_feedback))
-                        activity_description = response.text.strip()
-            
-                        # Extract keywords and fetch related image
-                        main_keyword = extract_main_keywords(activity_description)
-                        image_url = None
-            
-                        try:
-                            if main_keyword:
-                                image_url = fetch_image_for_keyword(main_keyword, st.session_state.GOOGLE_MAPS_API_KEY)
-                        except Exception as e:
-                            logging.error(f"Error fetching indoor fallback image: {str(e)}")
-            
-                        st.session_state.last_short_response = activity_description
-                        st.session_state.recommendation_data = {
-                            "type": "indoor",
-                            "name": f"Indoor {top_interest} Activity",
-                            "description": activity_description,
-                            "image_url": image_url,
-                            "activity_type": top_interest,
-                            "keyword": main_keyword
-                        }
-                except Exception as e:
-                    logging.error(f"Error in outdoor flow: {str(e)}")
-                    traceback.print_exc()
-                    # Emergency fallback
-                    st.session_state.recommendation_data = {
-                        "type": "indoor",
-                        "name": "Activity Suggestion",
-                        "description": "We recommend trying something fun related to your interests!",
-                        "image_url": None,
-                        "activity_type": "activity"
-                    }
-                    st.session_state.errors.append(f"Error creating outdoor suggestion: {str(e)}")
-
-            # Reset user feedback after using it
-            if st.session_state.user_feedback:
-                st.session_state.previous_feedback = st.session_state.user_feedback
-                st.session_state.user_feedback = None
-
-            st.session_state.recommendation_shown = True
-
-        except Exception as e:
-            logging.error(f"Unexpected error in recommendation process: {str(e)}")
-            traceback.print_exc()
-            st.session_state.errors.append(f"Unexpected error: {str(e)}")
-            # Set up a basic fallback recommendation
-            st.session_state.recommendation_data = {
-                "type": "indoor",
-                "name": "Activity Suggestion",
-                "description": "Try something relaxing or fun based on your interests!",
-                "image_url": None,
-                "activity_type": "activity"
-            }
-            st.session_state.recommendation_shown = True
-
-# Display the recommendation
-if "recommendation_data" in st.session_state:
-    data = st.session_state.recommendation_data
-
-    # Display image if available (for both indoor and outdoor activities)
-    if data.get("image_url"):
-        st.image(data["image_url"], use_container_width=True)
-        # Always show user context below the image
-        st.markdown("""
-        <div style="background-color: #f0f2f6; padding: 16px; border-radius: 12px; margin-top: 20px;">
-          <h4 style="margin-top: 0;">🌤️ Your Current Context</h4>
-          <ul style="padding-left: 1em; list-style: none;">
-            <li><strong>Weather:</strong> {weather}</li>
-            <li><strong>Current Time:</strong> {current_time}</li>
-            <li><strong>Free Hours Available:</strong> {free_hours} hours</li>
-          </ul>
-          <h5 style="margin-bottom: 0.5em;">📅 Today's Events:</h5>
-          <ul style="padding-left: 1em; list-style: disc;">
-            {calendar_items}
-          </ul>
-        </div>
-        """.format(
-            weather=user.get("weather", "Unknown"),
-            current_time=user.get("current_time", "Unknown"),
-            free_hours=user.get("free_hours", "Unknown"),
-            calendar_items="\n".join(
-                f"<li><strong>{event['event']}</strong> from {event['start']} to {event['end']}</li>"
-                for event in user.get("calendar", [])
-            )
-        ), unsafe_allow_html=True)
-
-
-    st.subheader("🔍 Suggested Activity")
-    st.write(data["description"])
-
-    # Show if this was based on previous feedback
-    if "previous_feedback" in st.session_state and st.session_state.previous_feedback:
-        st.info("This is a new suggestion based on your feedback.")
-        st.session_state.previous_feedback = None
-
-    # Action buttons
-    col1, col2 = st.columns(2)
-
-    with col1:
-        if st.button("👍 I like it!"):
-            # Update user preferences with like
-            item_data = {
-                "name": data.get("name", "Unknown"),
-                "type": data.get("activity_type", "Unknown")
-            }
-            update_preferences_from_feedback("like", item_data)
-            st.balloons()
-            st.success("Great! I'll remember you liked this for future recommendations!")
-
-    with col2:
-        if st.button("👎 Show me something else"):
-        # Update user preferences with dislike
-            item_data = {
-                "name": data.get("name", "Unknown"),
-                "type": data.get("activity_type", "Unknown")
-            }
-            update_preferences_from_feedback("dislike", item_data)
+# Tab 1: Activity Recommendations
+with tabs[0]:
+    # Get user context (either from session or generate new)
+    if "user" not in st.session_state:
+        user = get_synthetic_user()
+        st.session_state.user = user
         
-            # Add to disliked places list if it was an outdoor place
-            if data.get("type") == "outdoor" and "place" in data and "place_id" in data["place"]:
-                if "disliked_places_ids" not in st.session_state:
-                    st.session_state.disliked_places_ids = []
-                st.session_state.disliked_places_ids.append(data["place"]["place_id"])
-                
-            # Store feedback to use in next recommendation
-            st.session_state.user_feedback = "The user did not like the previous suggestion. Please provide a completely different recommendation."
-            
-            # Update the top interest after preference change
-            st.session_state.top_interest = top_activity_interest_llm(user)
-            
-            # Reset recommendation to get new one
-            st.session_state.recommendation_shown = False
-            
-            # Clear any activity type decision to allow reconsideration
-            if "activity_type" in st.session_state:
-                del st.session_state.activity_type
-                
-            st.rerun()
-
-    # Know More button
-    if st.button("🔎 Tell me more"):
-        # Update preferences when user views details
-        item_data = {
-            "name": data.get("name", "Unknown"),
-            "type": data.get("activity_type", "Unknown")
-        }
-        update_preferences_from_feedback("view_details", item_data)
+        # Store user in ChromaDB if not already there
+        chroma_manager = st.session_state.chroma_manager
+        chroma_manager.add_or_update_user(user["user_id"], user)
+    else:
+        user = st.session_state.user
     
-        # Get detailed suggestion
-        detailed, maps_html = get_detailed_suggestion(
-            user,
-            model,
-            st.session_state.last_short_response,
-            st.session_state.top_interest,
-            st.session_state.recommendation_data  # Pass the recommendation data
-        )
-        st.markdown(f"### 📖 More details:\n\n{detailed}")
+    # Process recommendation when needed
+    if "recommendation_shown" not in st.session_state or not st.session_state.recommendation_shown:
+        with st.spinner("Finding the perfect activity for you..."):
+            try:
+                # Get the activity graph instance
+                activity_graph = st.session_state.activity_graph
+                
+                # Setup initial state for LangGraph
+                initial_state = {
+                    "user": user,
+                    "user_feedback": st.session_state.get("user_feedback"),
+                    "errors": []
+                }
+                
+                # Execute the graph to get a recommendation
+                final_state = activity_graph.run(initial_state)
+                
+                # Store the result in session state
+                st.session_state.recommendation_data = final_state["recommendation"]
+                st.session_state.errors = final_state.get("errors", [])
+                
+                # Reset user feedback after using it
+                if st.session_state.get("user_feedback"):
+                    st.session_state.previous_feedback = st.session_state.user_feedback
+                    st.session_state.user_feedback = None
+                
+                st.session_state.recommendation_shown = True
+                
+            except Exception as e:
+                logger.error(f"Unexpected error in recommendation process: {str(e)}")
+                logger.error(traceback.format_exc())
+                st.session_state.errors.append(f"Unexpected error: {str(e)}")
+                
+                # Set up a basic fallback recommendation
+                st.session_state.recommendation_data = {
+                    "type": "indoor",
+                    "name": "Activity Suggestion",
+                    "description": "Try something relaxing or fun based on your interests!",
+                    "image_url": None,
+                    "activity_type": "activity"
+                }
+                st.session_state.recommendation_shown = True
+    
+    # Display the recommendation
+    if "recommendation_data" in st.session_state:
+        data = st.session_state.recommendation_data
         
-        # Display maps link if available
-        if maps_html:
-            st.markdown(maps_html, unsafe_allow_html=True)
+        # Display image if available
+        if data.get("image_url"):
+            st.image(data["image_url"], use_container_width=True)
+            
+            # Show user context below the image
+            st.markdown("""
+            <div style="background-color: #f0f2f6; padding: 16px; border-radius: 12px; margin-top: 20px;">
+              <h4 style="margin-top: 0;">🌤️ Your Current Context</h4>
+              <ul style="padding-left: 1em; list-style: none;">
+                <li><strong>Weather:</strong> {weather}</li>
+                <li><strong>Current Time:</strong> {current_time}</li>
+                <li><strong>Free Hours Available:</strong> {free_hours} hours</li>
+              </ul>
+              <h5 style="margin-bottom: 0.5em;">📅 Today's Events:</h5>
+              <ul style="padding-left: 1em; list-style: disc;">
+                {calendar_items}
+              </ul>
+            </div>
+            """.format(
+                weather=user.get("weather", "Unknown"),
+                current_time=user.get("current_time", "Unknown"),
+                free_hours=user.get("free_hours", "Unknown"),
+                calendar_items="\n".join(
+                    f"<li><strong>{event['event']}</strong> from {event['start']} to {event['end']}</li>"
+                    for event in user.get("calendar", [])
+                )
+            ), unsafe_allow_html=True)
+        
+        st.subheader("🔍 Suggested Activity")
+        st.write(data["description"])
+        
+        # Show if this was based on previous feedback
+        if "previous_feedback" in st.session_state and st.session_state.previous_feedback:
+            st.info("This is a new suggestion based on your feedback.")
+            st.session_state.previous_feedback = None
+        
+        # Action buttons
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("👍 I like it!"):
+                # Get chroma manager to update preferences
+                chroma_manager = st.session_state.chroma_manager
+                
+                # Prepare feedback data
+                feedback_data = {
+                    "user_id": user["user_id"],
+                    "activity_id": data.get("id", "unknown"),
+                    "activity_type": data.get("type", "unknown"),
+                    "activity_name": data.get("name", "Unknown"),
+                    "interest_category": data.get("activity_type", "unknown"),
+                    "feedback_type": "like",
+                    "timestamp": datetime.now().isoformat()
+                }
+                
+                # Add feedback to ChromaDB
+                chroma_manager.add_feedback(feedback_data)
+                
+                st.balloons()
+                st.success("Great! I'll remember you liked this for future recommendations!")
+        
+        with col2:
+            if st.button("👎 Show me something else"):
+                # Get chroma manager to update preferences
+                chroma_manager = st.session_state.chroma_manager
+                
+                # Prepare feedback data
+                feedback_data = {
+                    "user_id": user["user_id"],
+                    "activity_id": data.get("id", "unknown"),
+                    "activity_type": data.get("type", "unknown"),
+                    "activity_name": data.get("name", "Unknown"),
+                    "interest_category": data.get("activity_type", "unknown"),
+                    "feedback_type": "dislike",
+                    "timestamp": datetime.now().isoformat()
+                }
+                
+                # Add feedback to ChromaDB
+                chroma_manager.add_feedback(feedback_data)
+                
+                # Store feedback to use in next recommendation
+                st.session_state.user_feedback = "The user did not like the previous suggestion. Please provide a completely different recommendation."
+                
+                # Reset recommendation to get new one
+                st.session_state.recommendation_shown = False
+                st.rerun()
+        
+        # Tell me more button
+        if st.button("🔎 Tell me more"):
+            # Get chroma manager to update preferences
+            chroma_manager = st.session_state.chroma_manager
+            
+            # Prepare feedback data for view details action
+            feedback_data = {
+                "user_id": user["user_id"],
+                "activity_id": data.get("id", "unknown"),
+                "activity_type": data.get("type", "unknown"),
+                "activity_name": data.get("name", "Unknown"),
+                "interest_category": data.get("activity_type", "unknown"),
+                "feedback_type": "view_details",
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            # Add feedback to ChromaDB
+            chroma_manager.add_feedback(feedback_data)
+            
+            # Get activity graph to generate details
+            activity_graph = st.session_state.activity_graph
+            
+            # Call detail expansion node
+            detail_state = {
+                "user": user,
+                "recommendation": data,
+                "errors": []
+            }
+            
+            expanded_state = activity_graph.expand_details(detail_state)
+            
+            # Display the detailed information
+            st.markdown(f"### 📖 More details:\n\n{expanded_state.get('detailed_description', 'No details available')}")
+            
+            # Display maps link if available
+            if expanded_state.get("maps_html"):
+                st.markdown(expanded_state["maps_html"], unsafe_allow_html=True)
+    
+    # Display errors if any occurred
+    if "errors" in st.session_state and st.session_state.errors:
+        with st.expander("Troubleshooting Information", expanded=False):
+            st.warning("Some issues occurred while generating your recommendations. We've provided alternatives instead.")
+            for error in st.session_state.errors[-3:]:  # Show only the most recent errors
+                st.error(error)
+            if st.button("Clear Errors"):
+                st.session_state.errors = []
+                st.rerun()
 
-# Display errors if any occurred
-if "errors" in st.session_state and st.session_state.errors:
-    with st.expander("Troubleshooting Information", expanded=False):
-        st.warning("Some issues occurred while generating your recommendations. We've provided alternatives instead.")
-        for error in st.session_state.errors[-3:]:  # Show only the most recent errors
-            st.error(error)
-        if st.button("Clear Errors"):
-            st.session_state.errors = []
-            st.rerun()
-
-# Display personalization summary in sidebar
-with st.sidebar.expander("📊 Your Preference Profile"):
-    prefs = get_user_preferences_db()
-
-    # Show category preferences
-    st.sidebar.subheader("Category Preferences")
-    if prefs["category_preferences"]:
-        for category, score in sorted(prefs["category_preferences"].items(), key=lambda x: x[1], reverse=True):
-            st.sidebar.write(f"- {category}: {score:.1f}")
+# Tab 2: Admin Dashboard
+with tabs[1]:
+    st.header("ChromaDB Admin Dashboard")
+    
+    # Simple authentication
+    admin_password = st.text_input("Enter admin password", type="password")
+    
+    if admin_password == st.secrets.get("ADMIN_PASSWORD", "admin"):  # Use a real password in production
+        # Get the ChromaDB manager
+        chroma_manager = st.session_state.chroma_manager
+        
+        # Create tabs for different data views
+        admin_tabs = st.tabs(["Users", "Activities", "Feedback", "Statistics"])
+        
+        # Tab 1: Users Collection
+        with admin_tabs[0]:
+            st.subheader("User Profiles")
+            
+            # Get all users
+            users = chroma_manager.get_all_users()
+            
+            if users:
+                user_ids = [u['user_id'] for u in users]
+                selected_user_id = st.selectbox("Select User", user_ids)
+                
+                # Show selected user details
+                selected_user = next((u for u in users if u['user_id'] == selected_user_id), None)
+                if selected_user:
+                    st.json(selected_user)
+                    
+                    # Option to delete user
+                    if st.button("Delete User"):
+                        chroma_manager.delete_user(selected_user_id)
+                        st.success(f"User {selected_user_id} deleted")
+                        st.rerun()
+            else:
+                st.info("No users found in the database")
+        
+        # Tab 2: Activities Collection
+        with admin_tabs[1]:
+            st.subheader("Activity History")
+            
+            # Get all activities
+            activities = chroma_manager.get_all_activities()
+            
+            if activities:
+                # Group by type
+                indoor_activities = [a for a in activities if a.get('type') == 'indoor']
+                outdoor_activities = [a for a in activities if a.get('type') == 'outdoor']
+                
+                st.write(f"Total Activities: {len(activities)} (Indoor: {len(indoor_activities)}, Outdoor: {len(outdoor_activities)})")
+                
+                activity_type = st.radio("Filter by Type", ["All", "Indoor", "Outdoor"])
+                
+                filtered_activities = activities
+                if activity_type == "Indoor":
+                    filtered_activities = indoor_activities
+                elif activity_type == "Outdoor":
+                    filtered_activities = outdoor_activities
+                
+                # Display activities
+                for activity in filtered_activities[:10]:  # Limit to 10 to avoid cluttering the UI
+                    with st.expander(f"{activity.get('name')} ({activity.get('id')})"):
+                        st.json(activity)
+            else:
+                st.info("No activities found in the database")
+        
+        # Tab 3: Feedback Collection
+        with admin_tabs[2]:
+            st.subheader("User Feedback")
+            
+            # Get all feedback
+            feedback = chroma_manager.get_all_feedback()
+            
+            if feedback:
+                # Group by type
+                likes = [f for f in feedback if f.get('feedback_type') == 'like']
+                dislikes = [f for f in feedback if f.get('feedback_type') == 'dislike']
+                views = [f for f in feedback if f.get('feedback_type') == 'view_details']
+                
+                st.write(f"Total Feedback: {len(feedback)} (Likes: {len(likes)}, Dislikes: {len(dislikes)}, Views: {len(views)})")
+                
+                feedback_type = st.radio("Filter by Feedback Type", ["All", "Likes", "Dislikes", "Views"])
+                
+                filtered_feedback = feedback
+                if feedback_type == "Likes":
+                    filtered_feedback = likes
+                elif feedback_type == "Dislikes":
+                    filtered_feedback = dislikes
+                elif feedback_type == "Views":
+                    filtered_feedback = views
+                
+                # Display feedback
+                for fb in filtered_feedback[:10]:  # Limit to 10 to avoid cluttering the UI
+                    with st.expander(f"{fb.get('activity_name')} - {fb.get('feedback_type')}"):
+                        st.json(fb)
+            else:
+                st.info("No feedback found in the database")
+        
+        # Tab 4: Statistics
+        with admin_tabs[3]:
+            st.subheader("User Statistics")
+            
+            # Get statistics
+            stats = chroma_manager.get_statistics()
+            
+            # Display user preference stats
+            st.write("### Interest Categories Popularity")
+            if stats.get("category_counts"):
+                # Create a bar chart
+                category_data = stats["category_counts"]
+                st.bar_chart(category_data)
+            else:
+                st.info("No category data available")
+            
+            # Display activity type stats
+            st.write("### Activity Type Distribution")
+            if stats.get("activity_type_counts"):
+                # Create a pie chart (Streamlit doesn't have native pie charts, so we'll use text)
+                type_data = stats["activity_type_counts"]
+                for activity_type, count in type_data.items():
+                    st.write(f"- {activity_type}: {count}")
+            else:
+                st.info("No activity type data available")
+            
+            # Option to export data
+            st.write("### Export Data")
+            export_type = st.selectbox("Select data to export", ["Users", "Activities", "Feedback"])
+            
+            if st.button("Export as JSON"):
+                if export_type == "Users":
+                    data = chroma_manager.get_all_users()
+                elif export_type == "Activities":
+                    data = chroma_manager.get_all_activities()
+                else:  # Feedback
+                    data = chroma_manager.get_all_feedback()
+                
+                # Create JSON string
+                json_data = json.dumps(data, indent=2)
+                
+                # Provide download link
+                st.download_button(
+                    label="Download JSON",
+                    data=json_data,
+                    file_name=f"{export_type.lower()}_export.json",
+                    mime="application/json"
+                )
     else:
-        st.sidebar.write("No preferences recorded yet.")
+        st.warning("Please enter the admin password to access this section")
 
-    # Show recent likes
-    st.sidebar.subheader("Recent Likes")
-    if prefs["liked_places"]:
-        for item in prefs["liked_places"][-3:]:
-            st.sidebar.write(f"- {item['name']} ({item['type']})")
-    else:
-        st.sidebar.write("No likes recorded yet .")
-
-    # Show recent dislikes
-    st.sidebar.subheader("Recent Dislikes")
-    if prefs["disliked_places"]:
-        for item in prefs["disliked_places"][-3:]:
-            st.sidebar.write(f"- {item['name']} ({item['type']})")
-    else:
-        st.sidebar.write("No dislikes recorded yet.")
-
-# Reset buttons
-with st.sidebar.expander("🔄 Reset Options"):
-    col1, col2 = st.sidebar.columns(2)
-
-    with col1:
-        if st.button("Reset Suggestion"):
-            # Reset only current suggestion
-            if "recommendation_shown" in st.session_state:
-                del st.session_state.recommendation_shown
-            if "recommendation_data" in st.session_state:
-                del st.session_state.recommendation_data
-            st.rerun()
-
-    with col2:
-        if st.button("Reset All"):
-            # Reset everything including preferences
-            for key in list(st.session_state.keys()):
-                if key != "initialized" and key not in ["GOOGLE_MAPS_API_KEY", "model", "ors_client", "gmaps_client"]:
-                    del st.session_state[key]
-            st.rerun()
-
-# Footer
+# App footer
 st.sidebar.markdown("---")
-st.sidebar.caption("Activity Planner App • v1.0")
+st.sidebar.caption("Activity Planner App • v2.0")
+
+# Sidebar: User preferences summary
+with st.sidebar:
+    if "user" in st.session_state:
+        user = st.session_state.user
+        chroma_manager = st.session_state.chroma_manager
+        
+        with st.expander("📊 Your Preference Profile"):
+            # Get user preferences from ChromaDB
+            user_preferences = chroma_manager.get_user_preferences(user["user_id"])
+            
+            # Show category preferences
+            st.subheader("Category Preferences")
+            if user_preferences.get("category_preferences"):
+                for category, score in sorted(user_preferences["category_preferences"].items(), key=lambda x: x[1], reverse=True):
+                    st.write(f"- {category}: {score:.1f}")
+            else:
+                st.write("No preferences recorded yet.")
+            
+            # Show recent likes
+            st.subheader("Recent Likes")
+            recent_likes = chroma_manager.get_recent_feedback(user["user_id"], "like", limit=3)
+            if recent_likes:
+                for item in recent_likes:
+                    st.write(f"- {item['activity_name']} ({item['interest_category']})")
+            else:
+                st.write("No likes recorded yet.")
+            
+            # Show recent dislikes
+            st.subheader("Recent Dislikes")
+            recent_dislikes = chroma_manager.get_recent_feedback(user["user_id"], "dislike", limit=3)
+            if recent_dislikes:
+                for item in recent_dislikes:
+                    st.write(f"- {item['activity_name']} ({item['interest_category']})")
+            else:
+                st.write("No dislikes recorded yet.")
+    
+    # Reset buttons
+    with st.expander("🔄 Reset Options"):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("Reset Suggestion"):
+                # Reset only current suggestion
+                if "recommendation_shown" in st.session_state:
+                    del st.session_state.recommendation_shown
+                if "recommendation_data" in st.session_state:
+                    del st.session_state.recommendation_data
+                st.rerun()
+        
+        with col2:
+            if st.button("Reset All"):
+                # Keep only API keys and clients
+                keep_keys = ["model", "ors_client", "gmaps_client", "chroma_manager", "activity_graph"]
+                preserved_values = {k: v for k, v in st.session_state.items() if k in keep_keys}
+                
+                # Clear session state
+                for key in list(st.session_state.keys()):
+                    if key not in keep_keys:
+                        del st.session_state[key]
+                
+                # Restore preserved values
+                for k, v in preserved_values.items():
+                    st.session_state[k] = v
+                
+                st.session_state.initialized = True
+                st.rerun()
