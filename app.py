@@ -8,7 +8,7 @@ from langchain.globals import set_debug
 import json
 
 # Import from our modules
-from graph.activity_graph import ActivitySuggesterGraph
+from activity_graph import ActivitySuggesterGraph
 from astra_manager import AstraManager
 from image_utils import fetch_image_for_activity
 from api_utils import init_clients, safe_api_call
