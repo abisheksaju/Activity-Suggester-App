@@ -4,7 +4,6 @@ from datetime import datetime
 import google.generativeai as genai
 import logging
 import traceback
-import chromadb
 from langchain.globals import set_debug
 import json
 
