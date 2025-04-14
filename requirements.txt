@@ -9,6 +9,9 @@ python-dotenv
 Pillow
 boto3
 uuid
+cassandra-driver
+astrapy
+langchain-astradb
 # Removed chromadb and dependencies:
 # chromadb==0.4.18
 # hnswlib>=0.7.0
