@@ -508,8 +508,11 @@ class ActivitySuggesterGraph:
             errors=initial_state.get("errors", [])
         )
         
-        # Run the graph
-        result = self.graph.invoke(state)
+
+        # Compile and run the graph
+        compiled_graph = self.graph.compile()
+        result = compiled_graph.invoke(state)
+
         
         # Convert back to dict
         return dict(result)
