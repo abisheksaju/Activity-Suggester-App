@@ -85,9 +85,8 @@ class AstraManager:
             }
             
             # Check if user exists
-            existing_user = self.db.get_many(
-                collection_name=self.users_collection_name,
-                filter={"_id": user_id},
+            existing_user = self.db[self.users_collection_name].find(
+                {"_id": user_id},
                 limit=1
             )
             
@@ -107,9 +106,10 @@ class AstraManager:
             
             # Store user with ID
             user_data["_id"] = user_id
-            self.db.upsert(
-                collection_name=self.users_collection_name,
-                document=user_data
+            self.db[self.users_collection_name].replace_one(
+                filter={"_id": user_id},
+                replacement=user_data,
+                upsert=True
             )
             
             return True
