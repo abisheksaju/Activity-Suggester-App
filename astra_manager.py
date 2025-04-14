@@ -139,9 +139,10 @@ class AstraManager:
             }
             
             # Store preferences
-            self.db.upsert(
-                collection_name=self.users_collection_name,
-                document=preferences
+            self.db[self.users_collection_name].replace_one(
+                filter={"_id": user_id},
+                replacement=user_data,
+                upsert=True
             )
             
             self.logger.info(f"Initialized preferences for user {user_id}")
