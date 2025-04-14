@@ -11,9 +11,9 @@ import json
 # Import from our modules
 from graph.activity_graph import ActivitySuggesterGraph
 from astra_manager import AstraManager
-from utils.image_utils import fetch_image_for_activity
-from utils.api_utils import init_clients, safe_api_call
-from utils.user_utils import get_synthetic_user, calculate_free_time
+from image_utils import fetch_image_for_activity
+from api_utils import init_clients, safe_api_call
+from user_utils import get_synthetic_user, calculate_free_time
 from config import SETTINGS
 
 # Set up logging
