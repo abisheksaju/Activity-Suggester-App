@@ -15,8 +15,6 @@ def get_synthetic_user():
     Returns:
         Dict: Synthetic user data
     """
-    # Generate a unique user ID
-    user_id = str(uuid.uuid4())
     
     # Define the user's base information
     user_data = {
