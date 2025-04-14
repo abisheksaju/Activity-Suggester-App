@@ -7,7 +7,7 @@ from datetime import datetime
 # Set up logging
 logger = logging.getLogger('user_utils')
 
-def get_synthetic_user() -> Dict[str, Any]:
+def get_synthetic_user():
     """
     Generate synthetic user data with automatically calculated free hours
     based on calendar and current time.
@@ -20,26 +20,26 @@ def get_synthetic_user() -> Dict[str, Any]:
     
     # Define the user's base information
     user_data = {
-        "user_id": user_id,
+        "user_id": us001,
         "location": {
             "city": "Bangalore",
             "lat": 12.9716,
             "lon": 77.5946
         },
-        "weather": random.choice(["Sunny", "Cloudy", "Rainy", "Clear", "Hot"]),
-        "current_time": f"{random.choice(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'])} {random.randint(6, 10)} AM",
+        "weather": "Cloudy",
+        "current_time": "Saturday 3PM",
         "calendar": [
             {"event": "Lunch with friend", "start": "1 PM", "end": "2 PM"},
             {"event": "Office Meeting", "start": "6 PM", "end": "7 PM"}
         ],
         "interests": {
-            "travel": round(random.uniform(0.6, 0.9), 2),
-            "food": round(random.uniform(0.5, 0.8), 2),
-            "news": round(random.uniform(0.3, 0.7), 2),
-            "shopping": round(random.uniform(0.4, 0.7), 2),
-            "gaming": round(random.uniform(0.5, 0.8), 2),
-            "fitness": round(random.uniform(0.6, 0.9), 2),
-            "cooking": round(random.uniform(0.5, 0.8), 2)
+            "travel": 0.9,
+            "food": 0.8,
+            "news": 0.5,
+            "shopping": 0.4,
+            "gaming": 0.5,
+            "fitness": 0.7,
+            "cooking": 0.6
         },
         "created_at": datetime.now().isoformat()
     }
@@ -52,7 +52,7 @@ def get_synthetic_user() -> Dict[str, Any]:
     
     return user_data
 
-def calculate_free_time(current_time_str: str, calendar_events: List[Dict[str, str]], max_hours: int = 6) -> int:
+def calculate_free_time(current_time_str: str, calendar_events: List[Dict[str, str]], max_hours: int = 6):
     """
     Calculate free time until next calendar event, with a maximum limit.
     
