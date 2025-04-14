@@ -67,7 +67,7 @@ class AstraManager:
                     self.logger.error(f"Error creating collection {name}: {str(e)}")
     
     # User operations
-    def add_or_update_user(self, user_id: str, user_data: Dict[str, Any]) -> bool:
+    def add_or_update_user(self, user_id: str, user_data: Dict[str, Any]):
         """
         Add or update a user profile in Astra DB
         
