@@ -464,7 +464,7 @@ with tabs[1]:
 
 # App footer
 st.sidebar.markdown("---")
-st.sidebar.caption("Activity Planner App • v2.0")
+st.sidebar.caption("Activity Planner App • v2.1")
 
 # Sidebar: User preferences summary
 with st.sidebar:
