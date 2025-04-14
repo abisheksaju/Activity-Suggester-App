@@ -6,71 +6,70 @@ from typing import Dict, List, Any, Optional, Union
 from datetime import datetime
 from collections import Counter
 
-import chromadb
-from chromadb.config import Settings
-from chromadb.utils import embedding_functions
+from astrapy import DataAPIClient
 
-class ChromaManager:
+class AstraManager:
     """
-    Manages interactions with ChromaDB for persistent storage of
+    Manages interactions with Astra DB for persistent storage of
     users, activities, preferences, and feedback.
+    Implements the same interface as ChromaManager for compatibility.
     """
     
-    def __init__(self, persist_directory: str = ".chromadb"):
-        """Initialize ChromaDB client and collections"""
-        self.logger = logging.getLogger('chroma_manager')
+    def __init__(self, token: Optional[str] = None, api_endpoint: Optional[str] = None):
+        """Initialize Astra DB client and collections"""
+        self.logger = logging.getLogger('astra_manager')
         
-        # Create persist directory if it doesn't exist
-        os.makedirs(persist_directory, exist_ok=True)
+        # Get credentials from environment or parameters
+        self.token = token or os.environ.get('ASTRA_TOKEN')
+        self.api_endpoint = api_endpoint or os.environ.get('ASTRA_API_ENDPOINT')
+        
+        if not self.token or not self.api_endpoint:
+            raise ValueError("Astra DB token and API endpoint are required")
         
         # Initialize client
-        self.client = chromadb.Client(Settings(
-            persist_directory=persist_directory,
-            chroma_db_impl="duckdb+parquet",
-        ))
-        
-        # Set up embedding function
-        self.embedding_func = embedding_functions.DefaultEmbeddingFunction()
+        self.client = DataAPIClient(self.token)
+        self.db = self.client.get_database_by_api_endpoint(self.api_endpoint)
         
         # Initialize collections
         self._init_collections()
+        
+        self.logger.info("Astra DB collections initialized")
     
     def _init_collections(self):
-        """Initialize ChromaDB collections"""
-        # Users collection - stores user profiles and preferences
-        self.users_collection = self.client.get_or_create_collection(
-            name="users",
-            embedding_function=self.embedding_func,
-            metadata={"description": "User profiles and preferences"}
-        )
+        """Initialize collections if they don't exist"""
+        # Get existing collections
+        existing_collections = self.db.list_collection_names()
         
-        # Activities collection - stores activity suggestions
-        self.activities_collection = self.client.get_or_create_collection(
-            name="activities",
-            embedding_function=self.embedding_func,
-            metadata={"description": "Activity suggestions"}
-        )
+        # Define collection names
+        self.users_collection_name = "users"
+        self.activities_collection_name = "activities"
+        self.places_collection_name = "places"
+        self.feedback_collection_name = "feedback"
         
-        # Places collection - stores place metadata
-        self.places_collection = self.client.get_or_create_collection(
-            name="places",
-            embedding_function=self.embedding_func,
-            metadata={"description": "Place information"}
-        )
-        
-        # Feedback collection - stores user feedback
-        self.feedback_collection = self.client.get_or_create_collection(
-            name="feedback",
-            embedding_function=self.embedding_func,
-            metadata={"description": "User feedback on activities"}
-        )
-        
-        self.logger.info("ChromaDB collections initialized")
+        # Create collections if they don't exist
+        for name in [self.users_collection_name, self.activities_collection_name, 
+                    self.places_collection_name, self.feedback_collection_name]:
+            if name not in existing_collections:
+                try:
+                    # Create vector collection if needed (for activities)
+                    if name == self.activities_collection_name:
+                        # Activities need vector search capability for RAG
+                        self.db.create_vector_collection(
+                            collection_name=name,
+                            embedding_field="vector", 
+                            dimension=1024  # Using NV Embed QA model dimension
+                        )
+                    else:
+                        # Regular collection for other data
+                        self.db.create_collection(name)
+                    self.logger.info(f"Created collection: {name}")
+                except Exception as e:
+                    self.logger.error(f"Error creating collection {name}: {str(e)}")
     
     # User operations
     def add_or_update_user(self, user_id: str, user_data: Dict[str, Any]) -> bool:
         """
-        Add or update a user profile in ChromaDB
+        Add or update a user profile in Astra DB
         
         Args:
             user_id: Unique ID for the user
@@ -80,37 +79,38 @@ class ChromaManager:
             bool: Success status
         """
         try:
-            # Convert user data to JSON string for storage
-            user_json = json.dumps(user_data)
+            # Add metadata
+            user_data["metadata"] = {
+                "updated_at": datetime.now().isoformat()
+            }
             
             # Check if user exists
-            existing_users = self.users_collection.get(
-                ids=[user_id],
-                include=["metadatas"]
+            existing_user = self.db.get_many(
+                collection_name=self.users_collection_name,
+                filter={"_id": user_id},
+                limit=1
             )
             
-            if existing_users["ids"]:
+            if existing_user and len(existing_user) > 0:
                 # Update existing user
-                self.users_collection.update(
-                    ids=[user_id],
-                    documents=[user_json],
-                    metadatas=[{"updated_at": datetime.now().isoformat()}]
+                user_data["metadata"]["created_at"] = existing_user[0].get("metadata", {}).get(
+                    "created_at", datetime.now().isoformat()
                 )
                 self.logger.info(f"Updated user {user_id}")
             else:
-                # Add new user
-                self.users_collection.add(
-                    ids=[user_id],
-                    documents=[user_json],
-                    metadatas=[{
-                        "created_at": datetime.now().isoformat(),
-                        "updated_at": datetime.now().isoformat()
-                    }]
-                )
+                # Add created_at timestamp for new user
+                user_data["metadata"]["created_at"] = datetime.now().isoformat()
                 self.logger.info(f"Added new user {user_id}")
                 
                 # Initialize preferences
                 self._initialize_user_preferences(user_id, user_data)
+            
+            # Store user with ID
+            user_data["_id"] = user_id
+            self.db.upsert(
+                collection_name=self.users_collection_name,
+                document=user_data
+            )
             
             return True
         except Exception as e:
@@ -125,24 +125,23 @@ class ChromaManager:
             
             # Create preferences data structure
             preferences = {
+                "_id": f"{user_id}_preferences",
                 "user_id": user_id,
                 "category_preferences": initial_interests,
                 "liked_places": [],
-                "disliked_places": []
-            }
-            
-            # Store preferences as a separate entry for easier updates
-            preferences_id = f"{user_id}_preferences"
-            
-            self.users_collection.add(
-                ids=[preferences_id],
-                documents=[json.dumps(preferences)],
-                metadatas=[{
+                "disliked_places": [],
+                "metadata": {
                     "type": "preferences",
                     "user_id": user_id,
                     "created_at": datetime.now().isoformat(),
                     "updated_at": datetime.now().isoformat()
-                }]
+                }
+            }
+            
+            # Store preferences
+            self.db.upsert(
+                collection_name=self.users_collection_name,
+                document=preferences
             )
             
             self.logger.info(f"Initialized preferences for user {user_id}")
@@ -151,7 +150,7 @@ class ChromaManager:
     
     def get_user(self, user_id: str) -> Optional[Dict[str, Any]]:
         """
-        Get a user profile from ChromaDB
+        Get a user profile from Astra DB
         
         Args:
             user_id: Unique ID for the user
@@ -160,14 +159,14 @@ class ChromaManager:
             Dict or None: User profile data or None if not found
         """
         try:
-            result = self.users_collection.get(
-                ids=[user_id],
-                include=["documents"]
+            result = self.db.get_many(
+                collection_name=self.users_collection_name,
+                filter={"_id": user_id},
+                limit=1
             )
             
-            if result["ids"] and result["documents"]:
-                # Parse JSON string back to dictionary
-                return json.loads(result["documents"][0])
+            if result and len(result) > 0:
+                return result[0]
             
             return None
         except Exception as e:
@@ -176,7 +175,7 @@ class ChromaManager:
     
     def delete_user(self, user_id: str) -> bool:
         """
-        Delete a user profile from ChromaDB
+        Delete a user profile from Astra DB
         
         Args:
             user_id: Unique ID for the user
@@ -186,11 +185,17 @@ class ChromaManager:
         """
         try:
             # Delete user profile
-            self.users_collection.delete(ids=[user_id])
+            self.db.delete(
+                collection_name=self.users_collection_name,
+                filter={"_id": user_id}
+            )
             
             # Delete user preferences
             preferences_id = f"{user_id}_preferences"
-            self.users_collection.delete(ids=[preferences_id])
+            self.db.delete(
+                collection_name=self.users_collection_name,
+                filter={"_id": preferences_id}
+            )
             
             # Delete user feedback
             self._delete_user_feedback(user_id)
@@ -207,57 +212,40 @@ class ChromaManager:
     def _delete_user_feedback(self, user_id: str):
         """Delete all feedback for a user"""
         try:
-            # Query feedback by user_id in metadata
-            result = self.feedback_collection.get(
-                where={"user_id": user_id},
-                include=["ids"]
+            self.db.delete(
+                collection_name=self.feedback_collection_name,
+                filter={"user_id": user_id}
             )
-            
-            if result["ids"]:
-                self.feedback_collection.delete(ids=result["ids"])
-                self.logger.info(f"Deleted {len(result['ids'])} feedback entries for user {user_id}")
+            self.logger.info(f"Deleted feedback for user {user_id}")
         except Exception as e:
             self.logger.error(f"Error deleting user feedback: {str(e)}")
     
     def _delete_user_activities(self, user_id: str):
         """Delete all activities for a user"""
         try:
-            # Query activities by user_id in metadata
-            result = self.activities_collection.get(
-                where={"user_id": user_id},
-                include=["ids"]
+            self.db.delete(
+                collection_name=self.activities_collection_name,
+                filter={"user_id": user_id}
             )
-            
-            if result["ids"]:
-                self.activities_collection.delete(ids=result["ids"])
-                self.logger.info(f"Deleted {len(result['ids'])} activities for user {user_id}")
+            self.logger.info(f"Deleted activities for user {user_id}")
         except Exception as e:
             self.logger.error(f"Error deleting user activities: {str(e)}")
     
     def get_all_users(self) -> List[Dict[str, Any]]:
         """
-        Get all user profiles from ChromaDB
+        Get all user profiles from Astra DB
         
         Returns:
             List[Dict]: List of user profiles
         """
         try:
             # Get all users (excluding preferences entries)
-            result = self.users_collection.get(
-                where={"$not": {"type": "preferences"}},
-                include=["documents", "metadatas"]
+            result = self.db.get_many(
+                collection_name=self.users_collection_name,
+                filter={"metadata.type": {"$ne": "preferences"}}
             )
             
-            users = []
-            if result["ids"]:
-                for i, doc in enumerate(result["documents"]):
-                    user = json.loads(doc)
-                    # Add metadata
-                    if "metadatas" in result and result["metadatas"]:
-                        user["metadata"] = result["metadatas"][i]
-                    users.append(user)
-            
-            return users
+            return result if result else []
         except Exception as e:
             self.logger.error(f"Error getting all users: {str(e)}")
             return []
@@ -265,7 +253,7 @@ class ChromaManager:
     # User preferences operations
     def get_user_preferences(self, user_id: str) -> Dict[str, Any]:
         """
-        Get user preferences from ChromaDB
+        Get user preferences from Astra DB
         
         Args:
             user_id: Unique ID for the user
@@ -275,14 +263,14 @@ class ChromaManager:
         """
         try:
             preferences_id = f"{user_id}_preferences"
-            result = self.users_collection.get(
-                ids=[preferences_id],
-                include=["documents"]
+            result = self.db.get_many(
+                collection_name=self.users_collection_name,
+                filter={"_id": preferences_id},
+                limit=1
             )
             
-            if result["ids"] and result["documents"]:
-                # Parse JSON string back to dictionary
-                return json.loads(result["documents"][0])
+            if result and len(result) > 0:
+                return result[0]
             
             # Return default preferences if not found
             return {
@@ -335,7 +323,7 @@ class ChromaManager:
             category = feedback_data.get("interest_category")
             feedback_type = feedback_data.get("feedback_type")
             
-            if category and category in preferences["category_preferences"]:
+            if category and "category_preferences" in preferences and category in preferences["category_preferences"]:
                 current_score = preferences["category_preferences"][category]
                 
                 if feedback_type == "like":
@@ -369,21 +357,27 @@ class ChromaManager:
                     preferences["category_preferences"][category] = min(1.0, current_score + 0.05)
             
             # Trim lists if they get too long
-            if len(preferences["liked_places"]) > 20:
+            if "liked_places" in preferences and len(preferences["liked_places"]) > 20:
                 preferences["liked_places"] = preferences["liked_places"][-20:]
-            if len(preferences["disliked_places"]) > 20:
+            if "disliked_places" in preferences and len(preferences["disliked_places"]) > 20:
                 preferences["disliked_places"] = preferences["disliked_places"][-20:]
             
-            # Update preferences in ChromaDB
+            # Update preferences metadata
+            if "metadata" not in preferences:
+                preferences["metadata"] = {}
+            
+            preferences["metadata"].update({
+                "type": "preferences",
+                "user_id": user_id,
+                "updated_at": datetime.now().isoformat()
+            })
+            
+            # Save updated preferences
             preferences_id = f"{user_id}_preferences"
-            self.users_collection.update(
-                ids=[preferences_id],
-                documents=[json.dumps(preferences)],
-                metadatas=[{
-                    "type": "preferences",
-                    "user_id": user_id,
-                    "updated_at": datetime.now().isoformat()
-                }]
+            preferences["_id"] = preferences_id
+            self.db.upsert(
+                collection_name=self.users_collection_name,
+                document=preferences
             )
             
             self.logger.info(f"Updated preferences for user {user_id}")
@@ -393,7 +387,7 @@ class ChromaManager:
     # Activity operations
     def add_activity(self, activity_data: Dict[str, Any]) -> bool:
         """
-        Add a new activity to ChromaDB
+        Add a new activity to Astra DB with vector embedding
         
         Args:
             activity_data: Activity data
@@ -403,24 +397,37 @@ class ChromaManager:
         """
         try:
             activity_id = activity_data.get("id", str(uuid.uuid4()))
-            user_id = activity_data.get("user_id", "unknown")
-            activity_type = activity_data.get("type", "unknown")
             
-            # Convert to JSON string
-            activity_json = json.dumps(activity_data)
+            # Ensure activity has an ID
+            activity_data["_id"] = activity_id
             
-            # Build metadata
-            metadata = {
-                "user_id": user_id,
-                "type": activity_type,
+            # Add metadata if not present
+            if "metadata" not in activity_data:
+                activity_data["metadata"] = {}
+            
+            # Update metadata
+            activity_data["metadata"].update({
+                "user_id": activity_data.get("user_id", "unknown"),
+                "type": activity_data.get("type", "unknown"),
                 "timestamp": datetime.now().isoformat()
-            }
+            })
             
-            # Add activity to collection
-            self.activities_collection.add(
-                ids=[activity_id],
-                documents=[activity_json],
-                metadatas=[metadata]
+            # Extract text for embedding
+            description = activity_data.get("description", "")
+            name = activity_data.get("name", "")
+            activity_type = activity_data.get("activity_type", "")
+            
+            # Combine text fields for better embedding context
+            text_for_embedding = f"{name} {description} {activity_type}".strip()
+            
+            # Set the $vector field for Astra DB to generate embedding
+            # This uses the built-in NVIDIA embedding on Astra DB
+            activity_data["$vector"] = text_for_embedding
+            
+            # Store the activity
+            self.db.upsert(
+                collection_name=self.activities_collection_name,
+                document=activity_data
             )
             
             self.logger.info(f"Added activity {activity_id}")
@@ -442,25 +449,22 @@ class ChromaManager:
         """
         try:
             # Get current activity
-            result = self.activities_collection.get(
-                ids=[activity_id],
-                include=["documents"]
+            result = self.db.get_many(
+                collection_name=self.activities_collection_name,
+                filter={"_id": activity_id},
+                limit=1
             )
             
-            if result["ids"] and result["documents"]:
-                # Parse JSON string back to dictionary
-                activity_data = json.loads(result["documents"][0])
+            if result and len(result) > 0:
+                activity_data = result[0]
                 
                 # Update image URL
                 activity_data["image_url"] = image_url
                 
-                # Convert back to JSON string
-                activity_json = json.dumps(activity_data)
-                
-                # Update in ChromaDB
-                self.activities_collection.update(
-                    ids=[activity_id],
-                    documents=[activity_json]
+                # Store updated activity
+                self.db.upsert(
+                    collection_name=self.activities_collection_name,
+                    document=activity_data
                 )
                 
                 self.logger.info(f"Updated image for activity {activity_id}")
@@ -489,35 +493,26 @@ class ChromaManager:
             List[Dict]: List of activities
         """
         try:
-            # Build query
-            where_clause = {"user_id": user_id}
+            # Build filter
+            filter_query = {"metadata.user_id": user_id}
             if activity_type:
-                where_clause["type"] = activity_type
+                filter_query["metadata.type"] = activity_type
             
             # Query activities
-            result = self.activities_collection.get(
-                where=where_clause,
-                include=["documents", "metadatas"],
+            result = self.db.get_many(
+                collection_name=self.activities_collection_name,
+                filter=filter_query,
                 limit=limit
             )
             
-            activities = []
-            if result["ids"]:
-                for i, doc in enumerate(result["documents"]):
-                    activity = json.loads(doc)
-                    # Add metadata
-                    if "metadatas" in result and result["metadatas"]:
-                        activity["metadata"] = result["metadatas"][i]
-                    activities.append(activity)
-            
-            return activities
+            return result if result else []
         except Exception as e:
             self.logger.error(f"Error getting user activities: {str(e)}")
             return []
     
     def get_all_activities(self, limit: int = 100) -> List[Dict[str, Any]]:
         """
-        Get all activities from ChromaDB
+        Get all activities from Astra DB
         
         Args:
             limit: Maximum number of activities to return
@@ -526,21 +521,12 @@ class ChromaManager:
             List[Dict]: List of activities
         """
         try:
-            result = self.activities_collection.get(
-                include=["documents", "metadatas"],
+            result = self.db.get_many(
+                collection_name=self.activities_collection_name,
                 limit=limit
             )
             
-            activities = []
-            if result["ids"]:
-                for i, doc in enumerate(result["documents"]):
-                    activity = json.loads(doc)
-                    # Add metadata
-                    if "metadatas" in result and result["metadatas"]:
-                        activity["metadata"] = result["metadatas"][i]
-                    activities.append(activity)
-            
-            return activities
+            return result if result else []
         except Exception as e:
             self.logger.error(f"Error getting all activities: {str(e)}")
             return []
@@ -561,32 +547,60 @@ class ChromaManager:
             List[Dict]: List of similar activities
         """
         try:
-            result = self.activities_collection.query(
-                query_texts=[description],
-                n_results=limit,
-                include=["documents", "metadatas", "distances"]
+            # Use vector search in Astra DB
+            result = self.db.vector_find(
+                collection_name=self.activities_collection_name,
+                vector=description,  # Astra DB will generate embedding for this text
+                limit=limit,
+                include_similarity=True  # Include similarity scores
             )
             
+            # Add similarity scores
             activities = []
-            if result["ids"] and result["ids"][0]:
-                for i, doc in enumerate(result["documents"][0]):
-                    activity = json.loads(doc)
-                    # Add metadata and similarity score
-                    if "metadatas" in result and result["metadatas"][0]:
-                        activity["metadata"] = result["metadatas"][0][i]
-                    if "distances" in result and result["distances"][0]:
-                        activity["similarity"] = 1.0 - min(result["distances"][0][i], 1.0)
-                    activities.append(activity)
+            for activity in result:
+                # Convert similarity score (0-1 range)
+                if "similarity" in activity:
+                    activity["similarity"] = activity["similarity"]
+                else:
+                    activity["similarity"] = 0.5  # Default if missing
+                
+                activities.append(activity)
             
             return activities
         except Exception as e:
             self.logger.error(f"Error getting similar activities: {str(e)}")
-            return []
+            # Fallback: return some random activities
+            return self.get_all_activities(limit=limit)
+    
+    def get_activity(self, activity_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get an activity by ID
+        
+        Args:
+            activity_id: Activity ID
+            
+        Returns:
+            Dict or None: Activity data or None if not found
+        """
+        try:
+            result = self.db.get_many(
+                collection_name=self.activities_collection_name,
+                filter={"_id": activity_id},
+                limit=1
+            )
+            
+            if result and len(result) > 0:
+                return result[0]
+            
+            return None
+        except Exception as e:
+            self.logger.error(f"Error getting activity: {str(e)}")
+            return None
     
     # Place operations
     def add_or_update_place(self, place_data: Dict[str, Any]) -> bool:
         """
-        Add or update a place in ChromaDB
+        Add or update a place in Astra DB
         
         Args:
             place_data: Place data
@@ -597,34 +611,38 @@ class ChromaManager:
         try:
             place_id = place_data.get("id", str(uuid.uuid4()))
             
-            # Convert to JSON string
-            place_json = json.dumps(place_data)
+            # Ensure place has an ID
+            place_data["_id"] = place_id
+            
+            # Add metadata if not present
+            if "metadata" not in place_data:
+                place_data["metadata"] = {}
             
             # Check if place exists
-            existing_places = self.places_collection.get(
-                ids=[place_id],
-                include=["metadatas"]
+            existing_place = self.db.get_many(
+                collection_name=self.places_collection_name,
+                filter={"_id": place_id},
+                limit=1
             )
             
-            if existing_places["ids"]:
-                # Update existing place
-                self.places_collection.update(
-                    ids=[place_id],
-                    documents=[place_json],
-                    metadatas=[{"updated_at": datetime.now().isoformat()}]
+            if existing_place and len(existing_place) > 0:
+                # Update timestamp
+                place_data["metadata"]["updated_at"] = datetime.now().isoformat()
+                place_data["metadata"]["created_at"] = existing_place[0].get("metadata", {}).get(
+                    "created_at", datetime.now().isoformat()
                 )
                 self.logger.info(f"Updated place {place_id}")
             else:
-                # Add new place
-                self.places_collection.add(
-                    ids=[place_id],
-                    documents=[place_json],
-                    metadatas=[{
-                        "created_at": datetime.now().isoformat(),
-                        "updated_at": datetime.now().isoformat()
-                    }]
-                )
+                # Set creation timestamp
+                place_data["metadata"]["created_at"] = datetime.now().isoformat()
+                place_data["metadata"]["updated_at"] = datetime.now().isoformat()
                 self.logger.info(f"Added new place {place_id}")
+            
+            # Store place
+            self.db.upsert(
+                collection_name=self.places_collection_name,
+                document=place_data
+            )
             
             return True
         except Exception as e:
@@ -633,7 +651,7 @@ class ChromaManager:
     
     def get_place(self, place_id: str) -> Optional[Dict[str, Any]]:
         """
-        Get a place from ChromaDB
+        Get a place from Astra DB
         
         Args:
             place_id: Place ID
@@ -642,14 +660,14 @@ class ChromaManager:
             Dict or None: Place data or None if not found
         """
         try:
-            result = self.places_collection.get(
-                ids=[place_id],
-                include=["documents"]
+            result = self.db.get_many(
+                collection_name=self.places_collection_name,
+                filter={"_id": place_id},
+                limit=1
             )
             
-            if result["ids"] and result["documents"]:
-                # Parse JSON string back to dictionary
-                return json.loads(result["documents"][0])
+            if result and len(result) > 0:
+                return result[0]
             
             return None
         except Exception as e:
@@ -668,17 +686,17 @@ class ChromaManager:
             List[Dict]: List of places
         """
         try:
-            # Use the 'where' parameter to filter by type (contained in 'types' array)
-            # Since ChromaDB doesn't support array contains, we'll get all and filter
-            result = self.places_collection.get(
-                include=["documents"],
-                limit=limit * 10  # Get more to allow for filtering
+            # Query for places with the given type in their types array
+            # This requires an array contains query which may vary by database
+            # For simplicity, get all and filter
+            result = self.db.get_many(
+                collection_name=self.places_collection_name,
+                limit=limit * 3  # Get more to allow for filtering
             )
             
             places = []
-            if result["ids"] and result["documents"]:
-                for doc in result["documents"]:
-                    place = json.loads(doc)
+            if result:
+                for place in result:
                     # Check if the type is in the types array
                     if "types" in place and place_type in place["types"]:
                         places.append(place)
@@ -693,7 +711,7 @@ class ChromaManager:
     # Feedback operations
     def add_feedback(self, feedback_data: Dict[str, Any]) -> bool:
         """
-        Add user feedback to ChromaDB
+        Add user feedback to Astra DB
         
         Args:
             feedback_data: Feedback data
@@ -704,26 +722,29 @@ class ChromaManager:
         try:
             feedback_id = str(uuid.uuid4())
             
+            # Ensure feedback has a unique ID
+            feedback_data["_id"] = feedback_id
+            
             # Ensure feedback has a timestamp
             if "timestamp" not in feedback_data:
                 feedback_data["timestamp"] = datetime.now().isoformat()
             
-            # Convert to JSON string
-            feedback_json = json.dumps(feedback_data)
+            # Add metadata if not present
+            if "metadata" not in feedback_data:
+                feedback_data["metadata"] = {}
             
-            # Extract metadata
-            metadata = {
+            # Update metadata
+            feedback_data["metadata"].update({
                 "user_id": feedback_data.get("user_id", "unknown"),
                 "activity_id": feedback_data.get("activity_id", "unknown"),
                 "feedback_type": feedback_data.get("feedback_type", "unknown"),
                 "timestamp": feedback_data.get("timestamp")
-            }
+            })
             
-            # Add feedback to collection
-            self.feedback_collection.add(
-                ids=[feedback_id],
-                documents=[feedback_json],
-                metadatas=[metadata]
+            # Store feedback
+            self.db.upsert(
+                collection_name=self.feedback_collection_name,
+                document=feedback_data
             )
             
             # Update user preferences based on feedback
@@ -753,28 +774,19 @@ class ChromaManager:
             List[Dict]: List of feedback
         """
         try:
-            # Build query
-            where_clause = {"user_id": user_id}
+            # Build filter
+            filter_query = {"metadata.user_id": user_id}
             if feedback_type:
-                where_clause["feedback_type"] = feedback_type
+                filter_query["metadata.feedback_type"] = feedback_type
             
             # Query feedback
-            result = self.feedback_collection.get(
-                where=where_clause,
-                include=["documents", "metadatas"],
+            result = self.db.get_many(
+                collection_name=self.feedback_collection_name,
+                filter=filter_query,
                 limit=limit
             )
             
-            feedbacks = []
-            if result["ids"]:
-                for i, doc in enumerate(result["documents"]):
-                    feedback = json.loads(doc)
-                    # Add metadata
-                    if "metadatas" in result and result["metadatas"]:
-                        feedback["metadata"] = result["metadatas"][i]
-                    feedbacks.append(feedback)
-            
-            return feedbacks
+            return result if result else []
         except Exception as e:
             self.logger.error(f"Error getting user feedback: {str(e)}")
             return []
@@ -813,7 +825,7 @@ class ChromaManager:
     
     def get_all_feedback(self, limit: int = 100) -> List[Dict[str, Any]]:
         """
-        Get all feedback from ChromaDB
+        Get all feedback from Astra DB
         
         Args:
             limit: Maximum number of feedbacks to return
@@ -822,21 +834,12 @@ class ChromaManager:
             List[Dict]: List of feedback
         """
         try:
-            result = self.feedback_collection.get(
-                include=["documents", "metadatas"],
+            result = self.db.get_many(
+                collection_name=self.feedback_collection_name,
                 limit=limit
             )
             
-            feedbacks = []
-            if result["ids"]:
-                for i, doc in enumerate(result["documents"]):
-                    feedback = json.loads(doc)
-                    # Add metadata
-                    if "metadatas" in result and result["metadatas"]:
-                        feedback["metadata"] = result["metadatas"][i]
-                    feedbacks.append(feedback)
-            
-            return feedbacks
+            return result if result else []
         except Exception as e:
             self.logger.error(f"Error getting all feedback: {str(e)}")
             return []
@@ -853,18 +856,17 @@ class ChromaManager:
         """
         try:
             # Get disliked outdoor activity feedback
-            result = self.feedback_collection.get(
-                where={
-                    "user_id": user_id,
-                    "feedback_type": "dislike"
-                },
-                include=["documents"]
+            result = self.db.get_many(
+                collection_name=self.feedback_collection_name,
+                filter={
+                    "metadata.user_id": user_id,
+                    "metadata.feedback_type": "dislike"
+                }
             )
             
             place_ids = []
-            if result["ids"]:
-                for doc in result["documents"]:
-                    feedback = json.loads(doc)
+            if result:
+                for feedback in result:
                     # Only include outdoor activities with place_id
                     if feedback.get("activity_type") == "outdoor" and "activity_id" in feedback:
                         # Get the activity to find the place_id
@@ -877,35 +879,10 @@ class ChromaManager:
             self.logger.error(f"Error getting disliked place IDs: {str(e)}")
             return []
     
-    def get_activity(self, activity_id: str) -> Optional[Dict[str, Any]]:
-        """
-        Get an activity by ID
-        
-        Args:
-            activity_id: Activity ID
-            
-        Returns:
-            Dict or None: Activity data or None if not found
-        """
-        try:
-            result = self.activities_collection.get(
-                ids=[activity_id],
-                include=["documents"]
-            )
-            
-            if result["ids"] and result["documents"]:
-                # Parse JSON string back to dictionary
-                return json.loads(result["documents"][0])
-            
-            return None
-        except Exception as e:
-            self.logger.error(f"Error getting activity: {str(e)}")
-            return None
-    
     # Statistics methods
     def get_statistics(self) -> Dict[str, Any]:
         """
-        Get statistics about the data in ChromaDB
+        Get statistics about the data in Astra DB
         
         Returns:
             Dict: Statistics
