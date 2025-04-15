@@ -114,153 +114,151 @@ if "initialized" not in st.session_state:
 # Main app title
 st.title("What should I do now?")
 
-# Tab 1: Activity Recommendations
-with tabs[0]:
-    # Get user context (either from session or generate new)
-    if "user" not in st.session_state:
-        user = get_synthetic_user()
-        st.session_state.user = user
-        
-        # Store user in ChromaDB if not already there
-        chroma_manager = st.session_state.chroma_manager
-        chroma_manager.add_or_update_user(user["user_id"], user)
-    else:
-        user = st.session_state.user
+# Get user context (either from session or generate new)
+if "user" not in st.session_state:
+    user = get_synthetic_user()
+    st.session_state.user = user
     
-    # Process recommendation when needed
-    if "recommendation_shown" not in st.session_state or not st.session_state.recommendation_shown:
-        with st.spinner("Finding the perfect activity for you..."):
-            try:
-                # Get the activity graph instance
-                activity_graph = st.session_state.activity_graph
-                
-                # Setup initial state for LangGraph
-                initial_state = {
-                    "user": user,
-                    "user_feedback": st.session_state.get("user_feedback"),
-                    "errors": []
-                }
-                
-                # Execute the graph to get a recommendation
-                final_state = activity_graph.run(initial_state)
-                
-                # Store the result in session state
-                st.session_state.recommendation_data = final_state["recommendation"]
-                st.session_state.errors = final_state.get("errors", [])
-                
-                # Reset user feedback after using it
-                if st.session_state.get("user_feedback"):
-                    st.session_state.previous_feedback = st.session_state.user_feedback
-                    st.session_state.user_feedback = None
-                
-                st.session_state.recommendation_shown = True
-                
-            except Exception as e:
-                logger.error(f"Unexpected error in recommendation process: {str(e)}")
-                logger.error(traceback.format_exc())
-                st.session_state.errors.append(f"Unexpected error: {str(e)}")
-                
-                # Set up a basic fallback recommendation
-                st.session_state.recommendation_data = {
-                    "type": "indoor",
-                    "name": "Activity Suggestion",
-                    "description": "Try something relaxing or fun based on your interests!",
-                    "image_url": None,
-                    "activity_type": "activity"
-                }
-                st.session_state.recommendation_shown = True
-    
-    # Display the recommendation
-    if "recommendation_data" in st.session_state:
-        data = st.session_state.recommendation_data
-        
-        # Display image if available
-        if data.get("image_url"):
-            st.image(data["image_url"], use_container_width=True)
+    # Store user in ChromaDB if not already there
+    chroma_manager = st.session_state.chroma_manager
+    chroma_manager.add_or_update_user(user["user_id"], user)
+else:
+    user = st.session_state.user
+
+# Process recommendation when needed
+if "recommendation_shown" not in st.session_state or not st.session_state.recommendation_shown:
+    with st.spinner("Finding the perfect activity for you..."):
+        try:
+            # Get the activity graph instance
+            activity_graph = st.session_state.activity_graph
             
-            # Show user context below the image
-            st.markdown("""
-            <div style="background-color: #f0f2f6; padding: 16px; border-radius: 12px; margin-top: 20px;">
-              <h4 style="margin-top: 0;">🌤️ Your Current Context</h4>
-              <ul style="padding-left: 1em; list-style: none;">
-                <li><strong>Weather:</strong> {weather}</li>
-                <li><strong>Current Time:</strong> {current_time}</li>
-                <li><strong>Free Hours Available:</strong> {free_hours} hours</li>
-              </ul>
-              <h5 style="margin-bottom: 0.5em;">📅 Today's Events:</h5>
-              <ul style="padding-left: 1em; list-style: disc;">
-                {calendar_items}
-              </ul>
-            </div>
-            """.format(
-                weather=user.get("weather", "Unknown"),
-                current_time=user.get("current_time", "Unknown"),
-                free_hours=user.get("free_hours", "Unknown"),
-                calendar_items="\n".join(
-                    f"<li><strong>{event['event']}</strong> from {event['start']} to {event['end']}</li>"
-                    for event in user.get("calendar", [])
-                )
-            ), unsafe_allow_html=True)
+            # Setup initial state for LangGraph
+            initial_state = {
+                "user": user,
+                "user_feedback": st.session_state.get("user_feedback"),
+                "errors": []
+            }
+            
+            # Execute the graph to get a recommendation
+            final_state = activity_graph.run(initial_state)
+            
+            # Store the result in session state
+            st.session_state.recommendation_data = final_state["recommendation"]
+            st.session_state.errors = final_state.get("errors", [])
+            
+            # Reset user feedback after using it
+            if st.session_state.get("user_feedback"):
+                st.session_state.previous_feedback = st.session_state.user_feedback
+                st.session_state.user_feedback = None
+            
+            st.session_state.recommendation_shown = True
+            
+        except Exception as e:
+            logger.error(f"Unexpected error in recommendation process: {str(e)}")
+            logger.error(traceback.format_exc())
+            st.session_state.errors.append(f"Unexpected error: {str(e)}")
+            
+            # Set up a basic fallback recommendation
+            st.session_state.recommendation_data = {
+                "type": "indoor",
+                "name": "Activity Suggestion",
+                "description": "Try something relaxing or fun based on your interests!",
+                "image_url": None,
+                "activity_type": "activity"
+            }
+            st.session_state.recommendation_shown = True
+
+# Display the recommendation
+if "recommendation_data" in st.session_state:
+    data = st.session_state.recommendation_data
+    
+    # Display image if available
+    if data.get("image_url"):
+        st.image(data["image_url"], use_container_width=True)
         
-        st.subheader("🔍 Suggested Activity")
-        st.write(data["description"])
-        
-        # Show if this was based on previous feedback
-        if "previous_feedback" in st.session_state and st.session_state.previous_feedback:
-            st.info("This is a new suggestion based on your feedback.")
-            st.session_state.previous_feedback = None
-        
-        # Action buttons
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            if st.button("👍 I like it!"):
-                # Get chroma manager to update preferences
-                chroma_manager = st.session_state.chroma_manager
-                
-                # Prepare feedback data
-                feedback_data = {
-                    "user_id": user["user_id"],
-                    "activity_id": data.get("id", "unknown"),
-                    "activity_type": data.get("type", "unknown"),
-                    "activity_name": data.get("name", "Unknown"),
-                    "interest_category": data.get("activity_type", "unknown"),
-                    "feedback_type": "like",
-                    "timestamp": datetime.now().isoformat()
-                }
-                
-                # Add feedback to ChromaDB
-                chroma_manager.add_feedback(feedback_data)
-                
-                st.balloons()
-                st.success("Great! I'll remember you liked this for future recommendations!")
-        
-        with col2:
-            if st.button("👎 Show me something else"):
-                # Get chroma manager to update preferences
-                chroma_manager = st.session_state.chroma_manager
-                
-                # Prepare feedback data
-                feedback_data = {
-                    "user_id": user["user_id"],
-                    "activity_id": data.get("id", "unknown"),
-                    "activity_type": data.get("type", "unknown"),
-                    "activity_name": data.get("name", "Unknown"),
-                    "interest_category": data.get("activity_type", "unknown"),
-                    "feedback_type": "dislike",
-                    "timestamp": datetime.now().isoformat()
-                }
-                
-                # Add feedback to ChromaDB
-                chroma_manager.add_feedback(feedback_data)
-                
-                # Store feedback to use in next recommendation
-                st.session_state.user_feedback = "The user did not like the previous suggestion. Please provide a completely different recommendation."
-                
-                # Reset recommendation to get new one
-                st.session_state.recommendation_shown = False
-                st.rerun()
-        
+        # Show user context below the image
+        st.markdown("""
+        <div style="background-color: #f0f2f6; padding: 16px; border-radius: 12px; margin-top: 20px;">
+          <h4 style="margin-top: 0;">🌤️ Your Current Context</h4>
+          <ul style="padding-left: 1em; list-style: none;">
+            <li><strong>Weather:</strong> {weather}</li>
+            <li><strong>Current Time:</strong> {current_time}</li>
+            <li><strong>Free Hours Available:</strong> {free_hours} hours</li>
+          </ul>
+          <h5 style="margin-bottom: 0.5em;">📅 Today's Events:</h5>
+          <ul style="padding-left: 1em; list-style: disc;">
+            {calendar_items}
+          </ul>
+        </div>
+        """.format(
+            weather=user.get("weather", "Unknown"),
+            current_time=user.get("current_time", "Unknown"),
+            free_hours=user.get("free_hours", "Unknown"),
+            calendar_items="\n".join(
+                f"<li><strong>{event['event']}</strong> from {event['start']} to {event['end']}</li>"
+                for event in user.get("calendar", [])
+            )
+        ), unsafe_allow_html=True)
+    
+    st.subheader("🔍 Suggested Activity")
+    st.write(data["description"])
+    
+    # Show if this was based on previous feedback
+    if "previous_feedback" in st.session_state and st.session_state.previous_feedback:
+        st.info("This is a new suggestion based on your feedback.")
+        st.session_state.previous_feedback = None
+    
+    # Action buttons
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("👍 I like it!"):
+            # Get chroma manager to update preferences
+            chroma_manager = st.session_state.chroma_manager
+            
+            # Prepare feedback data
+            feedback_data = {
+                "user_id": user["user_id"],
+                "activity_id": data.get("id", "unknown"),
+                "activity_type": data.get("type", "unknown"),
+                "activity_name": data.get("name", "Unknown"),
+                "interest_category": data.get("activity_type", "unknown"),
+                "feedback_type": "like",
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            # Add feedback to ChromaDB
+            chroma_manager.add_feedback(feedback_data)
+            
+            st.balloons()
+            st.success("Great! I'll remember you liked this for future recommendations!")
+    
+    with col2:
+        if st.button("👎 Show me something else"):
+            # Get chroma manager to update preferences
+            chroma_manager = st.session_state.chroma_manager
+            
+            # Prepare feedback data
+            feedback_data = {
+                "user_id": user["user_id"],
+                "activity_id": data.get("id", "unknown"),
+                "activity_type": data.get("type", "unknown"),
+                "activity_name": data.get("name", "Unknown"),
+                "interest_category": data.get("activity_type", "unknown"),
+                "feedback_type": "dislike",
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            # Add feedback to ChromaDB
+            chroma_manager.add_feedback(feedback_data)
+            
+            # Store feedback to use in next recommendation
+            st.session_state.user_feedback = "The user did not like the previous suggestion. Please provide a completely different recommendation."
+            
+            # Reset recommendation to get new one
+            st.session_state.recommendation_shown = False
+            st.rerun()
+    
         # Tell me more button
         if st.button("🔎 Tell me more"):
             # Get chroma manager to update preferences
@@ -308,46 +306,7 @@ with tabs[0]:
             if st.button("Clear Errors"):
                 st.session_state.errors = []
                 st.rerun()
-
-# Tab 2: Admin Dashboard
-with tabs[1]:
-    st.header("ChromaDB Admin Dashboard")
-    
-    # Simple authentication
-    admin_password = st.text_input("Enter admin password", type="password")
-    
-    if admin_password == st.secrets.get("ADMIN_PASSWORD", "admin"):  # Use a real password in production
-        # Get the ChromaDB manager
-        chroma_manager = st.session_state.chroma_manager
-        
-        # Create tabs for different data views
-        admin_tabs = st.tabs(["Users", "Activities", "Feedback", "Statistics"])
-        
-        # Tab 1: Users Collection
-        with admin_tabs[0]:
-            st.subheader("User Profiles")
-            
-            # Get all users
-            users = chroma_manager.get_all_users()
-            
-            if users:
-                user_ids = [u['user_id'] for u in users]
-                selected_user_id = st.selectbox("Select User", user_ids)
                 
-                # Show selected user details
-                selected_user = next((u for u in users if u['user_id'] == selected_user_id), None)
-                if selected_user:
-                    st.json(selected_user)
-                    
-                    # Option to delete user
-                    if st.button("Delete User"):
-                        chroma_manager.delete_user(selected_user_id)
-                        st.success(f"User {selected_user_id} deleted")
-                        st.rerun()
-            else:
-                st.info("No users found in the database")
-        
-       
 
 # Sidebar: User preferences summary
 with st.sidebar:
