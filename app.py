@@ -230,7 +230,6 @@ if "recommendation_data" in st.session_state:
             # Add feedback to ChromaDB
             chroma_manager.add_feedback(feedback_data)
             
-            st.balloons()
             st.success("Great! I'll remember you liked this for future recommendations!")
     
     with col2:
