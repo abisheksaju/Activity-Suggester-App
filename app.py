@@ -114,9 +114,6 @@ if "initialized" not in st.session_state:
 # Main app title
 st.title("What should I do now?")
 
-# Tab for main recommendation and admin view
-tabs = st.tabs(["Activity Recommendations", "Admin Dashboard"])
-
 # Tab 1: Activity Recommendations
 with tabs[0]:
     # Get user context (either from session or generate new)
