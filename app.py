@@ -33,9 +33,6 @@ from utils import (
     get_llm_prompt_with_history,
     calculate_free_time,
     parse_time_to_minutes,
-    record_interaction,
-    _init_collection,
-    __init__,
     AppError, APIError, LLMError, ImageError
 )
 from utils import astra_manager
