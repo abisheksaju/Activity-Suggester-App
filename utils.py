@@ -92,7 +92,7 @@ def get_synthetic_user():
     """
     # Define the user's base information
     user_data = {
-        "user_id": "us001"
+        "user_id": "us001",
         "location": {
             "city": "Bangalore",
             "lat": 12.9716,
