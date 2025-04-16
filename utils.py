@@ -25,10 +25,6 @@ import openai
 #openai.api_key = os.getenv("OPENAI_API_KEY", "your-default-api-key")
 
 
-#astra initializing
-astra_manager = AstraManager(token=os.environ.get("ASTRA_TOKEN"),api_endpoint=os.environ.get("ASTRA_API_ENDPOINT"))
-
-
 UNSPLASH_ACCESS_KEY = "rVvxvkYuJREpI8wMn9GvJUGhj5bZVlVFBkKMx1QquQA"
 
 # Set up logging
@@ -1374,6 +1370,11 @@ class AstraManager:
             except Exception as e:
                 print(f"Error recording interaction: {str(e)}")
                 return False
+
+
+
+#astra initializing
+astra_manager = AstraManager(token=os.environ.get("ASTRA_TOKEN"),api_endpoint=os.environ.get("ASTRA_API_ENDPOINT"))
                 
                 
 
