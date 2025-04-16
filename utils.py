@@ -1,5 +1,8 @@
 # This is the complete utils.py file
 
+import os
+import uuid
+from typing import Dict, Any, Optional
 import datetime
 import random
 import pandas as pd
@@ -15,10 +18,16 @@ import traceback
 import logging
 import re
 from PIL import UnidentifiedImageError
+from astrapy import DataAPIClient
 import openai
 
 # Make sure to set OPENAI_API_KEY in your environment or replace here.
 #openai.api_key = os.getenv("OPENAI_API_KEY", "your-default-api-key")
+
+
+#astra initializing
+astra_manager = AstraManager(token=os.environ.get("ASTRA_TOKEN"),api_endpoint=os.environ.get("ASTRA_API_ENDPOINT"))
+
 
 UNSPLASH_ACCESS_KEY = "rVvxvkYuJREpI8wMn9GvJUGhj5bZVlVFBkKMx1QquQA"
 
@@ -83,6 +92,7 @@ def get_synthetic_user():
     """
     # Define the user's base information
     user_data = {
+        "user_id": "us001"
         "location": {
             "city": "Bangalore",
             "lat": 12.9716,
@@ -1280,3 +1290,91 @@ Mention only one place by name.
         logger.error(f"Error in choose_place: {str(e)}")
         logger.error(traceback.format_exc())
         return None, "We encountered an unexpected error. Let's suggest an indoor activity instead."
+
+
+class AstraManager:
+    """
+    Simplified AstraManager for hackathon demo.
+    Records user interactions to a single collection in Astra DB.
+    """
+
+
+    def __init__(self, token: Optional[str] = None, api_endpoint: Optional[str] = None):
+        """Initialize Astra DB client and create collection if needed"""
+        # Get credentials from environment or parameters
+        self.token = token or os.environ.get('ASTRA_TOKEN')
+        self.api_endpoint = api_endpoint or os.environ.get('ASTRA_API_ENDPOINT')
+        
+        if not self.token or not self.api_endpoint:
+            raise ValueError("Astra DB token and API endpoint are required")
+        
+        # Initialize client
+        self.client = DataAPIClient(self.token)
+        self.db = self.client.get_database_by_api_endpoint(self.api_endpoint)
+        
+        # Define collection name
+        self.interactions_collection_name = "user_interactions"
+        
+        # Create collection if it doesn't exist
+        self._init_collection()
+        
+    def _init_collection(self):
+        """Initialize user_interactions collection if it doesn't exist"""
+        # Get existing collections
+        existing_collections = self.db.list_collection_names()
+        
+        # Create collection if it doesn't exist
+        if self.interactions_collection_name not in existing_collections:
+            try:
+                self.db.create_collection(self.interactions_collection_name)
+            except Exception as e:
+                print(f"Error creating collection: {str(e)}")
+    
+    
+    def record_interaction(self, interaction_data: Dict[str, Any]):
+            """
+            Record a user interaction in Astra DB
+            
+            Args:
+                interaction_data: Dictionary containing:
+                    - user_id: Identifier for the user
+                    - weather: Current weather conditions
+                    - time: Timestamp of the interaction (auto-generated if not provided)
+                    - location: User's location
+                    - free_time: Amount of free time available
+                    - suggested_activity: The activity recommended by the LLM
+                    - user_action: User's response (Like, Dislike, Know More, or blank)
+                    - session_id: Identifier for the current session
+                    - user_interests: Dictionary of interest categories and their scores
+                
+            Returns:
+                bool: Success status
+            """
+            try:
+                # Generate interaction_id if not provided
+                if "interaction_id" not in interaction_data:
+                    interaction_data["interaction_id"] = str(uuid.uuid4())
+                
+                # Add timestamp if not provided
+                if "time" not in interaction_data:
+                    interaction_data["time"] = datetime.now().isoformat()
+    
+                # Flatten recommendation_data if it exists
+                rec_data = interaction_data.pop("recommendation_data", {})
+                interaction_data.update(rec_data)
+                
+                # Set document ID for Astra DB
+                interaction_data["_id"] = interaction_data["interaction_id"]
+    
+                collection = self.db.get_collection(self.interactions_collection_name)
+    
+                collection.insert_one(document=interaction_data)
+                return True
+    
+            except Exception as e:
+                print(f"Error recording interaction: {str(e)}")
+                return False
+                
+                
+
+
