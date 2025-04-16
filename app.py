@@ -33,8 +33,13 @@ from utils import (
     get_llm_prompt_with_history,
     calculate_free_time,
     parse_time_to_minutes,
+    record_interaction,
+    _init_collection,
+    __init__,
     AppError, APIError, LLMError, ImageError
 )
+from utils import astra_manager
+
 
 st.set_page_config(page_title="Activity Suggester", layout="centered")
 
@@ -373,6 +378,24 @@ if "recommendation_data" in st.session_state:
 
     st.subheader("🔍 Suggested Activity")
     st.write(data["description"])
+
+    success = astra_manager.record_interaction({
+                "user_id": user.get("user_id", "unknown"),
+                "interaction_type": data.get("type"),  # "indoor" or "outdoor"
+                "suggested_activity": data.get("description"),
+                "recommendation_data": data,  # full recommendation payload
+                "user_action": "",  # placeholder for Like / Dislike / etc.
+                "session_id": st.session_state.get("session_id"),
+                "user_interests": user.get("interests", {}),
+                "location": user.get("location", {}),
+                "weather": user.get("weather", ""),
+                "time": user.get("current_time", ""),  # current_time field from user
+                "calendar": user.get("calendar", [])
+                })
+
+    if not success:
+        st.warning("⚠️ Failed to save interaction to database.")
+
 
     # Show if this was based on previous feedback
     if "previous_feedback" in st.session_state and st.session_state.previous_feedback:
