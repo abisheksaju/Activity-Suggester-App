@@ -118,6 +118,42 @@ def get_synthetic_user():
     
     return user_data
 
+def get_synthetic_weekend_slots():
+   """
+   Returns predefined weekend time slots for demo purposes.
+   """
+   weekend_slots = [
+       {
+           "id": "S1",
+           "day": "Saturday",
+           "start_time": "3 PM",
+           "end_time": "6 PM",
+           "duration_hours": 3
+       },
+       {
+           "id": "S2",
+           "day": "Saturday",
+           "start_time": "7 AM",
+           "end_time": "11 AM",
+           "duration_hours": 4
+       },
+       {
+           "id": "S3",
+           "day": "Sunday",
+           "start_time": "1 PM",
+           "end_time": "6 PM",
+           "duration_hours": 5
+       },
+       {
+           "id": "S4",
+           "day": "Sunday",
+           "start_time": "7 AM",
+           "end_time": "9 AM",
+           "duration_hours": 2
+       }
+   ]
+   return weekend_slots
+
 def extract_main_keywords(text):
     """
     Extract main keywords from indoor activity description
