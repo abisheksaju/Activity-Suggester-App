@@ -204,7 +204,7 @@ def render_main_view():
    
    # Display image if available
    if recommendation.get("image_url"):
-       st.image(recommendation["image_url"], use_column_width=True)
+       st.image(recommendation["image_url"], use_container_width=True)
    
    # Display recommendation details
    st.subheader("🔍 Suggested Activity")
@@ -453,7 +453,7 @@ def render_slot_recommendation(slot_id):
    
    # Display recommendation
    if recommendation.get("image_url"):
-       st.image(recommendation["image_url"], use_column_width=True)
+       st.image(recommendation["image_url"], use_container_width=True)
    
    st.subheader("🔍 Suggested Activity")
    st.write(recommendation["description"])
