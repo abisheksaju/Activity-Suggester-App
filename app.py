@@ -124,21 +124,7 @@ if "weekend_initialized" not in st.session_state:
    st.session_state.weekend_initialized = True
 
 
-# View Management
-if "current_view" not in st.session_state:
-   st.session_state.current_view = "main"
 
-# Determine which view to display based on current_view value
-if st.session_state.current_view == "main":
-   render_main_view()
-elif st.session_state.current_view == "slot" and "selected_slot_id" in st.session_state:
-   render_slot_recommendation(st.session_state.selected_slot_id)
-elif st.session_state.current_view == "quick_glance":
-   render_quick_glance_view()
-else:
-   # Fallback to main view if something is wrong
-   st.session_state.current_view = "main"
-   render_main_view()
 
 
 def render_main_view():
@@ -717,7 +703,21 @@ def render_quick_glance_view():
 
 
 
+# View Management
+if "current_view" not in st.session_state:
+   st.session_state.current_view = "main"
 
+# Determine which view to display based on current_view value
+if st.session_state.current_view == "main":
+   render_main_view()
+elif st.session_state.current_view == "slot" and "selected_slot_id" in st.session_state:
+   render_slot_recommendation(st.session_state.selected_slot_id)
+elif st.session_state.current_view == "quick_glance":
+   render_quick_glance_view()
+else:
+   # Fallback to main view if something is wrong
+   st.session_state.current_view = "main"
+   render_main_view()
 
 
 
