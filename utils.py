@@ -166,11 +166,6 @@ def fetch_ticketmaster_events(api_key, interest=None, city=None, country_code=No
     # Base API URL
     url = "https://app.ticketmaster.com/discovery/v2/events.json"
 
-    # Initialize query parameters
-    params = {
-        "apikey": api_key,
-        "size": size
-    }
 
     # Add segmentId if interest is valid
     if interest and interest in EVENT_TYPE_TO_SEGMENT:
