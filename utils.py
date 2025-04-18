@@ -159,7 +159,7 @@ def fetch_ticketmaster_events(api_key, interest=None, city=None, country_code=No
         dict: JSON response from Ticketmaster API.
     """
 
-    params = {"apikey": api_key, "size": kwargs.get("size", 10)}
+    params = {"apikey": api_key, "size": size}
     if interest in EVENT_TYPE_TO_SEGMENT:
         params["segmentId"] = EVENT_TYPE_TO_SEGMENT[interest]
 
