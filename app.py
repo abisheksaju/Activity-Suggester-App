@@ -34,6 +34,14 @@ from utils import (
     get_llm_prompt_with_history,
     calculate_free_time,
     parse_time_to_minutes,
+    fetch_and_store_events,
+    has_more_events,
+    get_next_event_for_display,
+    format_event,
+    fetch_ticketmaster_events,
+    fetch_eventbrite_events,
+    fetch_predicthq_events,
+    scrape_google_events
     AppError, APIError, LLMError, ImageError
 )
 from utils import astra_manager
@@ -72,6 +80,9 @@ if "initialized" not in st.session_state:
         GOOGLE_MAPS_API_KEY = st.secrets["GOOGLE_MAPS_API_KEY"]
         GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
         ORS_API_KEY = st.secrets["ORS_API_KEY"]
+        TICKETMASTER_API_KEY = st.secrets["TICKETMASTER_API_KEY"]
+        EVENTBRITE_API_KEY = st.secrets["EVENTBRITE_API_KEY"]
+        PREDICTHQ_API_KEY = st.secrets["PREDICTHQ_API_KEY"]
 
         # Configure Gemini model
         os.environ['GEMINI_API_KEY'] = GEMINI_API_KEY
@@ -165,6 +176,79 @@ def render_main_view():
                    "image_url": image_url,
                    "activity_type": top_interest
                }
+
+           
+           
+           elif decision == "outdoor":
+               # Check if the user's top interest aligns with event categories
+                event_related_interests = ["music", "sports", "entertainment", "theatre", "concerts", "festivals", "events", "arts"]
+                
+                # See if the top interest is event-related
+                is_event_related = top_interest.lower() in [interest.lower() for interest in event_related_interests]
+                
+                # If interest is event-related, attempt to fetch events first
+                if is_event_related:
+                    try:
+                        # Get user location info
+                        city = user.get("location", {}).get("city", "")
+                        country_code = user.get("location", {}).get("country_code", "US")  # Default to US
+                        
+                        # Get upcoming weekend dates
+                        today = datetime.now()
+                        saturday, sunday = get_upcoming_weekend(today)
+                        
+                        # Format dates for API
+                        start_date = saturday.strftime("%Y-%m-%d")
+                        end_date = sunday.strftime("%Y-%m-%d")
+                        
+                        # Try to fetch events
+                        events_found = fetch_and_store_events(
+                            interest=top_interest,
+                            city=city,
+                            country_code=country_code,
+                            start_date=start_date,
+                            end_date=end_date
+                        )
+                        
+                        # If events were found, process and display them
+                        if events_found and has_more_events():
+                            # Get first event
+                            event = get_next_event_for_display()
+                            
+                            if event:
+                                # Format event description
+                                event_description = f"Check out this event: **{event['title']}**\n\n"
+                                event_description += f"📅 **Date:** {event['date']}\n"
+                                event_description += f"📍 **Location:** {event['location']}\n"
+                                if event.get('venue'):
+                                    event_description += f"🏢 **Venue:** {event['venue']}\n"
+                                
+                                # Get image for event
+                                image_url = None
+                                try:
+                                    keywords = extract_keywords_from_prompt(event['title'])
+                                    for keyword in keywords:
+                                        if keyword and len(keyword.strip()) >= 3:
+                                            img_url = fetch_image_for_keyword(keyword, st.session_state.GOOGLE_MAPS_API_KEY)
+                                            if img_url:
+                                                image_url = img_url
+                                                break
+                                except Exception as e:
+                                    logging.error(f"Error getting event image: {str(e)}")
+                                
+                                recommendation = {
+                                    "type": "event",
+                                    "name": event['title'],
+                                    "description": event_description,
+                                    "image_url": image_url,
+                                    "activity_type": top_interest,
+                                    "event_data": event
+                                }
+               
+               
+               
+
+           
            else:
                # Generate outdoor activity
                places = fetch_places(user, top_interest, st.session_state.GOOGLE_MAPS_API_KEY)
@@ -407,6 +491,76 @@ def render_slot_recommendation(slot_id):
                        "image_url": image_url,
                        "activity_type": top_interest
                    }
+
+               elif decision == "outdoor":
+                   # Check if the user's top interest aligns with event categories
+                    event_related_interests = ["music", "sports", "entertainment", "theatre", "concerts", "festivals", "events", "arts"]
+                    
+                    # See if the top interest is event-related
+                    is_event_related = top_interest.lower() in [interest.lower() for interest in event_related_interests]
+                    
+                    # If interest is event-related, attempt to fetch events first
+                    if is_event_related:
+                        try:
+                            # Get user location info
+                            city = user.get("location", {}).get("city", "")
+                            country_code = user.get("location", {}).get("country_code", "US")  # Default to US
+                            
+                            # Get upcoming weekend dates
+                            today = datetime.now()
+                            saturday, sunday = get_upcoming_weekend(today)
+                            
+                            # Format dates for API
+                            start_date = saturday.strftime("%Y-%m-%d")
+                            end_date = sunday.strftime("%Y-%m-%d")
+                            
+                            # Try to fetch events
+                            events_found = fetch_and_store_events(
+                                interest=top_interest,
+                                city=city,
+                                country_code=country_code,
+                                start_date=start_date,
+                                end_date=end_date
+                            )
+                            
+                            # If events were found, process and display them
+                            if events_found and has_more_events():
+                                # Get first event
+                                event = get_next_event_for_display()
+                                
+                                if event:
+                                    # Format event description
+                                    event_description = f"Check out this event: **{event['title']}**\n\n"
+                                    event_description += f"📅 **Date:** {event['date']}\n"
+                                    event_description += f"📍 **Location:** {event['location']}\n"
+                                    if event.get('venue'):
+                                        event_description += f"🏢 **Venue:** {event['venue']}\n"
+                                    
+                                    # Get image for event
+                                    image_url = None
+                                    try:
+                                        keywords = extract_keywords_from_prompt(event['title'])
+                                        for keyword in keywords:
+                                            if keyword and len(keyword.strip()) >= 3:
+                                                img_url = fetch_image_for_keyword(keyword, st.session_state.GOOGLE_MAPS_API_KEY)
+                                                if img_url:
+                                                    image_url = img_url
+                                                    break
+                                    except Exception as e:
+                                        logging.error(f"Error getting event image: {str(e)}")
+                                    
+                                    recommendation = {
+                                        "type": "event",
+                                        "name": event['title'],
+                                        "description": event_description,
+                                        "image_url": image_url,
+                                        "activity_type": top_interest,
+                                        "event_data": event
+                                    }
+                   
+
+                
+                
                else:
                    # Generate outdoor activity
                    places = fetch_places(user, top_interest, st.session_state.GOOGLE_MAPS_API_KEY)
@@ -571,35 +725,156 @@ def render_quick_glance_view():
    st.header("Your Weekend Plan - Quick Glance")
    
    # Ensure all slots have recommendations
-   for slot in st.session_state.weekend_slots:
-       slot_id = slot["id"]
-       if slot_id not in st.session_state.slot_recommendations and slot_id not in st.session_state.booked_slots:
-           with st.spinner(f"Finding an activity for {slot['day']} {slot['start_time']}-{slot['end_time']}..."):
-               # Get top interest
-               top_interest = top_activity_interest_llm(user)
-               
-               # Generate a recommendation (simplified for quick glance)
-               prompt = build_llm_prompt_indoor(user, top_interest)
-               slot_context = f"You have {slot['duration_hours']} hours available on {slot['day']} from {slot['start_time']} to {slot['end_time']}."
-               prompt = prompt.replace("My context:", f"My context:\n- {slot_context}\n-")
-               
-               response = st.session_state.model.generate_content(prompt)
-               activity_description = response.text.strip()
-               
-               # Get image (simplified)
-               main_keyword = extract_main_keywords(activity_description)
-               image_url = fetch_image_for_keyword(main_keyword, st.session_state.GOOGLE_MAPS_API_KEY)
-               
-               recommendation = {
-                   "type": "indoor",
-                   "name": f"{top_interest} Activity",
-                   "description": activity_description,
-                   "image_url": image_url,
-                   "activity_type": top_interest
-               }
-               
-               # Store in session state
-               st.session_state.slot_recommendations[slot_id] = recommendation
+   # Instead of the simplified approach, use the full flow for each slot
+    for slot in st.session_state.weekend_slots:
+        slot_id = slot["id"]
+        if slot_id not in st.session_state.slot_recommendations and slot_id not in st.session_state.booked_slots:
+            with st.spinner(f"Finding an activity for {slot['day']} {slot['start_time']}-{slot['end_time']}..."):
+                # Get top interest
+                top_interest = top_activity_interest_llm(user)
+                
+                # Decide indoor/outdoor
+                decision_prompt = build_llm_decision_prompt(user, top_interest)
+                decision_response = st.session_state.model.generate_content(decision_prompt)
+                decision = decision_response.text.strip().lower()
+                
+                # Follow the full recommendation flow
+                if decision == "indoor":
+                    # Generate indoor activity
+                    prompt = build_llm_prompt_indoor(user, top_interest)
+                    slot_context = f"You have {slot['duration_hours']} hours available on {slot['day']} from {slot['start_time']} to {slot['end_time']}."
+                    prompt = prompt.replace("My context:", f"My context:\n- {slot_context}\n-")
+                    
+                    response = st.session_state.model.generate_content(prompt)
+                    activity_description = response.text.strip()
+                    
+                    # Get image
+                    main_keyword = extract_main_keywords(activity_description)
+                    image_url = fetch_image_for_keyword(main_keyword, st.session_state.GOOGLE_MAPS_API_KEY)
+                    
+                    recommendation = {
+                        "type": "indoor",
+                        "name": f"Indoor {top_interest} Activity",
+                        "description": activity_description,
+                        "image_url": image_url,
+                        "activity_type": top_interest
+                    }
+                else:
+                    # Check if event-related interest
+                    event_related_interests = ["music", "sports", "entertainment", "theatre", "concerts", "festivals", "events", "arts"]
+                    is_event_related = top_interest.lower() in [interest.lower() for interest in event_related_interests]
+                    
+                    if is_event_related:
+                        try:
+                            # Get location & date info
+                            city = user.get("location", {}).get("city", "")
+                            country_code = user.get("location", {}).get("country_code", "US")
+                            
+                            # Use the slot's date instead of calculating weekend
+                            slot_date = None
+                            if "saturday" in slot["day"].lower():
+                                saturday, _ = get_upcoming_weekend(datetime.now())
+                                slot_date = saturday
+                            elif "sunday" in slot["day"].lower():
+                                _, sunday = get_upcoming_weekend(datetime.now())
+                                slot_date = sunday
+                                
+                            if slot_date:
+                                date_str = slot_date.strftime("%Y-%m-%d")
+                                
+                                # Try to fetch events for this specific date
+                                events_found = fetch_and_store_events(
+                                    interest=top_interest,
+                                    city=city,
+                                    country_code=country_code,
+                                    start_date=date_str,
+                                    end_date=date_str
+                                )
+                                
+                                if events_found and has_more_events():
+                                    event = get_next_event_for_display()
+                                    if event:
+                                        # Format event for this slot
+                                        event_description = f"Check out this event: **{event['title']}**\n\n"
+                                        event_description += f"📅 **Date:** {event['date']}\n"
+                                        event_description += f"📍 **Location:** {event['location']}\n"
+                                        
+                                        # Get image for event
+                                        image_url = None
+                                        try:
+                                            keywords = extract_keywords_from_prompt(event['title'])
+                                            for keyword in keywords:
+                                                if keyword and len(keyword.strip()) >= 3:
+                                                    img_url = fetch_image_for_keyword(keyword, st.session_state.GOOGLE_MAPS_API_KEY)
+                                                    if img_url:
+                                                        image_url = img_url
+                                                        break
+                                        except Exception as e:
+                                            logging.error(f"Error getting event image: {str(e)}")
+                                        
+                                        recommendation = {
+                                            "type": "event",
+                                            "name": event['title'],
+                                            "description": event_description,
+                                            "image_url": image_url,
+                                            "activity_type": top_interest,
+                                            "event_data": event
+                                        }
+                                        # Successfully created event recommendation
+                                        st.session_state.slot_recommendations[slot_id] = recommendation
+                                        continue
+                        except Exception as e:
+                            logging.error(f"Error fetching events for slot: {str(e)}")
+                    
+                    # If we reached here, either not event-related or no events found
+                    # Fall back to places
+                    try:
+                        # Add slot context for outdoor selection
+                        slot_context = f"The user has {slot['duration_hours']} hours available on {slot['day']} from {slot['start_time']} to {slot['end_time']}."
+                        places = fetch_places(user, top_interest, st.session_state.GOOGLE_MAPS_API_KEY)
+                        selected_place, description = choose_place(user, places, st.session_state.model, user_feedback=slot_context)
+                        
+                        if selected_place:
+                            image_url = fetch_place_image(selected_place, st.session_state.GOOGLE_MAPS_API_KEY)
+                            recommendation = {
+                                "type": "outdoor",
+                                "place": selected_place,
+                                "name": selected_place.get("name", "Unknown place"),
+                                "description": description,
+                                "image_url": image_url,
+                                "activity_type": top_interest
+                            }
+                        else:
+                            # Final fallback to indoor if no places found
+                            prompt = build_llm_prompt_indoor(user, top_interest)
+                            slot_context = f"You have {slot['duration_hours']} hours available on {slot['day']} from {slot['start_time']} to {slot['end_time']}."
+                            prompt = prompt.replace("My context:", f"My context:\n- {slot_context}\n-")
+                            
+                            response = st.session_state.model.generate_content(prompt)
+                            activity_description = response.text.strip()
+                            main_keyword = extract_main_keywords(activity_description)
+                            image_url = fetch_image_for_keyword(main_keyword, st.session_state.GOOGLE_MAPS_API_KEY)
+                            
+                            recommendation = {
+                                "type": "indoor",
+                                "name": f"Indoor {top_interest} Activity",
+                                "description": activity_description,
+                                "image_url": image_url,
+                                "activity_type": top_interest
+                            }
+                    except Exception as e:
+                        logging.error(f"Error processing outdoor for slot: {str(e)}")
+                        # Emergency indoor fallback
+                        recommendation = {
+                            "type": "indoor",
+                            "name": "Activity Suggestion",
+                            "description": "Try something fun related to your interests!",
+                            "image_url": None,
+                            "activity_type": top_interest
+                        }
+                        
+                # Store recommendation in session state
+                st.session_state.slot_recommendations[slot_id] = recommendation
    
    # Display all slots in a grid
    num_cols = 2  # Display 2 slots per row
