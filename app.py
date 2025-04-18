@@ -138,7 +138,6 @@ if "weekend_initialized" not in st.session_state:
 
 
 
-
 def render_main_view():
    """
    Renders the main view of the weekend planner with the primary recommendation
@@ -420,7 +419,6 @@ def render_main_view():
    if st.button("🔍 Quick Glance", key="quick_glance_btn"):
        st.session_state.current_view = "quick_glance"
        st.rerun()
-
 
 
 
@@ -812,7 +810,6 @@ def render_slot_recommendation(slot_id):
    if st.button("← Back to main view", key=f"back_slot_{slot_id}"):
        st.session_state.current_view = "main"
        st.rerun()
-
 
 
 
