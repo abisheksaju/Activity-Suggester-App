@@ -43,6 +43,15 @@ from utils import (
     fetch_eventbrite_events,
     fetch_predicthq_events,
     scrape_google_events,
+    #Booking functions
+    show_booking_options,
+    generate_booking_urls,
+    _generate_airbnb_url,
+    _generate_booking_com_url,
+    _generate_agoda_url,
+    _generate_expedia_url,
+    _generate_hotels_com_url,
+    open_booking_platform,
     AppError, APIError, LLMError, ImageError
 )
 from utils import astra_manager
@@ -508,6 +517,8 @@ def render_main_view():
        # Display maps link if available
        elif maps_html:
            st.markdown(maps_html, unsafe_allow_html=True)
+           # Show booking options for relevant recommendation types
+           show_booking_options(recommendation)
    
    # Book this slot button
    if st.button("📌 Book this slot"):
@@ -932,6 +943,8 @@ def render_slot_recommendation(slot_id):
            # Display maps link if available
            elif maps_html:
                st.markdown(maps_html, unsafe_allow_html=True)
+               # Show booking options for relevant recommendation types
+               show_booking_options(recommendation)
        
        # Book this slot button
        if st.button("📌 Book this slot", key=f"book_slot_{slot_id}"):

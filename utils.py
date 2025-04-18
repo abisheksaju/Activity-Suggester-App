@@ -24,6 +24,8 @@ from bs4 import BeautifulSoup
 from datetime import datetime, time, timedelta
 import pytz
 from typing import List, Dict, Optional
+import webbrowser
+from urllib.parse import quote, urlencode
 
 # Make sure to set OPENAI_API_KEY in your environment or replace here.
 #openai.api_key = os.getenv("OPENAI_API_KEY", "your-default-api-key")
@@ -1609,6 +1611,153 @@ def parse_time_to_minutes(time_str):
         return hour * 60 + minute
     except Exception:
         return 0  # Default in case of error
+
+def show_booking_options(recommendation):
+    """Display booking dropdown and button for accommodation options"""
+    if recommendation.get("type") not in ["outdoor", "travel"]:
+        return
+
+    # Get location from recommendation
+    place_name = recommendation.get("place", {}).get("name", "Unknown place")
+    place_address = recommendation.get("place", {}).get("formatted_address", place_name)
+
+    # Get upcoming weekend dates
+    today = datetime.now()
+    saturday, sunday = get_upcoming_weekend(today)
+
+    # Generate booking URLs
+    booking_urls = BookingUtils.generate_booking_urls(
+        location=place_address,
+        check_in=saturday,
+        check_out=sunday,
+        guests=2,  # Default, can make configurable
+        rooms=1    # Default, can make configurable
+    )
+
+    # Create dropdown and button in Streamlit
+    st.markdown("---")
+    st.subheader("🏨 Need accommodation?")
+
+    col1, col2 = st.columns([3, 2])
+
+    with col1:
+        selected_platform = st.selectbox(
+            "Choose a booking site:",
+            options=[""] + list(booking_urls.keys()),
+            format_func=lambda x: "Select a platform" if x == "" else x.capitalize(),
+            key=f"platform_select_{recommendation['name']}"
+        )
+
+    with col2:
+        if selected_platform:
+            platform_name = selected_platform.capitalize()
+            if st.button(f"Book on {platform_name}",
+                        key=f"book_{selected_platform}_{recommendation['name']}"):
+                BookingUtils.open_booking_platform(selected_platform, booking_urls[selected_platform])
+                # Track this booking click
+                update_preferences_from_feedback(
+                    "booking_click",
+                    {"platform": selected_platform, "place": place_name}
+                )
+        else:
+            st.button("Select platform first", disabled=True)
+
+def generate_booking_urls(location, check_in, check_out, guests=2, rooms=1):
+    """
+    Generate deep links for major booking platforms
+    Args:
+        location (str): Destination city or address
+        check_in (datetime): Check-in date
+        check_out (datetime): Check-out date
+        guests (int): Number of guests
+        rooms (int): Number of rooms
+    Returns:
+        dict: {platform_name: url}
+    """
+    date_format = "%Y-%m-%d"
+
+    params = {
+        'location': location,
+        'check_in': check_in.strftime(date_format),
+        'check_out': check_out.strftime(date_format),
+        'guests': guests,
+        'rooms': rooms
+    }
+
+    return {
+        'airbnb': BookingUtils._generate_airbnb_url(**params),
+        'booking': BookingUtils._generate_booking_com_url(**params),
+        'agoda': BookingUtils._generate_agoda_url(**params),
+        'expedia': BookingUtils._generate_expedia_url(**params),
+        'hotels': BookingUtils._generate_hotels_com_url(**params)
+    }
+
+def _generate_airbnb_url(location, check_in, check_out, guests, rooms):
+    base_url = "https://www.airbnb.com/s/"
+    query = {
+        'query': location,
+        'checkin': check_in,
+        'checkout': check_out,
+        'adults': guests,
+        'price_max': None  # Can add price filters
+    }
+    return f"{base_url}{quote(location)}/homes?" + urlencode(query)
+
+def _generate_booking_com_url(location, check_in, check_out, guests, rooms):
+    base_url = "https://www.booking.com/searchresults.html"
+    query = {
+        'ss': location,
+        'checkin': check_in,
+        'checkout': check_out,
+        'group_adults': guests,
+        'no_rooms': rooms,
+        'group_children': 0,
+        'sb_travel_purpose': 'leisure'
+    }
+    return f"{base_url}?{urlencode(query)}"
+
+def _generate_agoda_url(location, check_in, check_out, guests, rooms):
+    base_url = "https://www.agoda.com/search"
+    query = {
+        'city': location,
+        'checkIn': check_in,
+        'checkOut': check_out,
+        'adults': guests,
+        'rooms': rooms,
+        'children': 0,
+        'priceCur': 'USD'
+    }
+    return f"{base_url}?{urlencode(query)}"
+
+@staticmethod
+def _generate_expedia_url(location, check_in, check_out, guests, rooms):
+    base_url = "https://www.expedia.com/Hotel-Search"
+    query = {
+        'destination': location,
+        'startDate': check_in,
+        'endDate': check_out,
+        'adults': guests,
+        'rooms': rooms
+    }
+    return f"{base_url}?{urlencode(query)}"
+
+def _generate_hotels_com_url(location, check_in, check_out, guests, rooms):
+    base_url = "https://www.hotels.com/search.do"
+    query = {
+        'q-destination': location,
+        'q-check-in': check_in,
+        'q-check-out': check_out,
+        'q-rooms': rooms,
+        'q-adults': guests,
+        'q-children': 0
+    }
+    return f"{base_url}?{urlencode(query)}"
+
+def open_booking_platform(platform, url):
+    """Open booking platform in default browser with tracking"""
+    print(f"Redirecting to {platform}...")
+    webbrowser.open(url)
+    return {"status": "success", "platform": platform, "url": url}
 
 # Enhanced version of choose_place with better error handling
 @safe_api_call
