@@ -619,27 +619,7 @@ def render_slot_recommendation(slot_id):
                else:
                    # Shouldn't reach here, but just in case we get an unexpected decision value
                    logging.warning(f"Unexpected decision value: {decision}")
-                   # Fallback to indoor
-                   slot_context = f"You have {slot['duration_hours']} hours available on {slot['day']} from {slot['start_time']} to {slot['end_time']}."
-                   prompt = build_llm_prompt_indoor(user, top_interest)
-                   prompt = prompt.replace("My context:", f"My context:\n- {slot_context}\n-")
-                   
-                   response = st.session_state.model.generate_content(prompt)
-                   activity_description = response.text.strip()
-                   main_keyword = extract_main_keywords(activity_description)
-                   image_url = fetch_image_for_keyword(main_keyword, st.session_state.GOOGLE_MAPS_API_KEY)
-                   
-                   recommendation = {
-                       "type": "indoor",
-                       "name": f"Indoor {top_interest} Activity",
-                       "description": activity_description,
-                       "image_url": image_url,
-                       "activity_type": top_interest
-                   }
-                   
-                   st.session_state.slot_recommendations[slot_id] = recommendation
-                   st.session_state.last_short_response = activity_description
-       
+                  
        # Get the recommendation from session state
        recommendation = st.session_state.slot_recommendations[slot_id]
    
@@ -649,61 +629,6 @@ def render_slot_recommendation(slot_id):
    
    st.subheader("🔍 Suggested Activity")
    st.write(recommendation["description"])
-   
-   # Add event-specific UI elements
-   if recommendation.get("type") == "event" and "event_data" in recommendation:
-       event = recommendation["event_data"]
-       st.info("🎟️ Event")
-       
-       if event.get("source"):
-           st.markdown(f"**Source:** {event['source']}")
-       
-       # Check if there are more events
-       if has_more_events():
-           if st.button("Show Next Event", key=f"next_event_{slot_id}"):
-               next_event = get_next_event_for_display()
-               if next_event:
-                   # Format event description
-                   event_description = f"Check out this event: **{next_event['title']}**\n\n"
-                   event_description += f"📅 **Date:** {next_event['date']}\n"
-                   event_description += f"📍 **Location:** {next_event['location']}\n"
-                   if next_event.get('venue'):
-                       event_description += f"🏢 **Venue:** {next_event['venue']}\n"
-                   
-                   # Try to get image for the event
-                   image_url = None
-                   try:
-                       keywords = extract_keywords_from_prompt(next_event['title'])
-                       for keyword in keywords:
-                           if keyword and len(keyword.strip()) >= 3:
-                               img_url = fetch_image_for_keyword(keyword, st.session_state.GOOGLE_MAPS_API_KEY)
-                               if img_url:
-                                   image_url = img_url
-                                   break
-                       
-                       # If no image found, try with venue
-                       if not image_url and next_event.get('venue'):
-                           image_url = fetch_image_for_keyword(next_event['venue'], st.session_state.GOOGLE_MAPS_API_KEY)
-                       
-                       # Last resort - try with interest type
-                       if not image_url:
-                           image_url = fetch_unsplash_image(recommendation["activity_type"])
-                   except Exception as e:
-                       logging.error(f"Error getting next event image: {str(e)}")
-                   
-                   # Update recommendation for this slot
-                   updated_recommendation = {
-                       "type": "event",
-                       "name": next_event['title'],
-                       "description": event_description,
-                       "image_url": image_url,
-                       "activity_type": recommendation["activity_type"],
-                       "event_data": next_event
-                   }
-                   
-                   st.session_state.slot_recommendations[slot_id] = updated_recommendation
-                   st.rerun()
-   
    # Record interaction in database
    success = astra_manager.record_interaction({
        "user_id": user.get("user_id", "unknown"),
