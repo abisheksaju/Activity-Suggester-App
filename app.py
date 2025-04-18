@@ -1068,7 +1068,7 @@ def render_quick_glance_view():
                                        }
                                        # Successfully created event recommendation
                                        st.session_state.slot_recommendations[slot_id] = recommendation
-                                       continue
+                                       
                        except Exception as e:
                            logging.error(f"Error fetching events for slot: {str(e)}")
                    
