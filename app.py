@@ -716,7 +716,7 @@ def render_slot_recommendation(slot_id):
                                        
                                        # Skip the rest of the function
                                        recommendation = st.session_state.slot_recommendations[slot_id]
-                                       break
+                
                        except Exception as e:
                            logging.error(f"Error finding events for slot: {str(e)}")
                    
