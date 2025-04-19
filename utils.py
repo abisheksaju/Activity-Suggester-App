@@ -2038,40 +2038,37 @@ Mention only one event by name.
 
 
 
-def get_multiple_events(count=5):
+def get_multiple_events(count=5, exclude_ids=None):
     """
-    Retrieves multiple events from storage.
-    
+    Retrieves multiple events from storage, excluding events with IDs in `exclude_ids`.
+
     Args:
         count (int): Number of events to retrieve
-        
+        exclude_ids (set): Set of event IDs to skip
+
     Returns:
         list: A list of event objects
     """
     global event_storage
     events = []
-    
-    # Save current index to restore it later
+    exclude_ids = exclude_ids or set()
+
+    # Save current index to restore later
     original_index = event_storage.current_index
-    
-    # Check how many events are available
-    available = 0
+
     temp_index = event_storage.current_index
-    while temp_index < len(event_storage.events):
-        available += 1
-        temp_index += 1
-    
-    # Retrieve up to count events
-    fetch_count = min(count, available)
-    for _ in range(fetch_count):
-        event = event_storage.get_next_event()
-        if event:
+
+    while temp_index < len(event_storage.events) and len(events) < count:
+        event = event_storage.events[temp_index]
+        if event.get("id") not in exclude_ids:
             events.append(event)
-    
-    # Restore original index (so we don't actually consume these events yet)
+        temp_index += 1
+
+    # Restore original index (non-consuming)
     event_storage.current_index = original_index
-    
+
     return events
+
 
 
 def mark_event_rejected(event_id):
