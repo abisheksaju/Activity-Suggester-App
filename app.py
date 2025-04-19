@@ -52,6 +52,10 @@ from utils import (
     generate_expedia_url,
     generate_hotels_com_url,
     open_booking_platform,
+    mark_event_rejected,
+    get_multiple_events,
+    choose_event,
+    
     AppError, APIError, LLMError, ImageError
 )
 from utils import astra_manager
@@ -115,6 +119,10 @@ if "initialized" not in st.session_state:
         st.session_state.gmaps_client = gmaps_client
         st.session_state.user_feedback = None
         st.session_state.initialized = True
+        if "shown_event_ids" not in st.session_state:
+            st.session_state.shown_event_ids = set()
+        if "rejected_event_ids" not in st.session_state:
+            st.session_state.rejected_event_ids = set()
 
         # Set up error tracking
         st.session_state.errors = []
@@ -216,37 +224,39 @@ def render_main_view():
                         add_debug_log(f"Events API call: {'succeeded' if events_found else 'failed'}")
 
                         if events_found and has_more_events():
-                            add_debug_log("Found available events to display")
-                            event = get_next_event_for_display()
-                            add_debug_log(f"Retrieved event: {'successful' if event else 'failed'}")
-                            if event:
-                                add_debug_log(f"Event title: {event.get('title', 'No title')}")
-                                event_description = f"Check out this event: **{event['title']}**\n\n"
-                                event_description += f"📅 **Date:** {event['date']}\n"
-                                event_description += f"📍 **Location:** {event['location']}\n"
-                                if event.get("venue"):
-                                    event_description += f"🏢 **Venue:** {event['venue']}\n"
+                            available_events = get_multiple_events(count=5)
+                            if available_events:
+                                selected_event, description = choose_event(user, available_events, st.session_state.model)
+                                if selected_event:
+                                    event_id = selected_event.get("id")
+                                    if event_id:
+                                        st.session_state.shown_event_ids.add(event_id)
+                                    event_description = f"Check out this event: **{selected_event['title']}**\n\n"
+                                    event_description += f"📅 **Date:** {selected_event['date']}\n"
+                                    event_description += f"📍 **Location:** {selected_event['location']}\n"
+                                    if selected_event.get("venue"):
+                                        event_description += f"🏢 **Venue:** {selected_event['venue']}\n"
 
-                                image_url = None
-                                try:
-                                    keywords = extract_keywords_from_prompt(event['title'])
-                                    for keyword in keywords:
-                                        if keyword and len(keyword.strip()) >= 3:
-                                            img_url = fetch_image_for_keyword(keyword, st.session_state.GOOGLE_MAPS_API_KEY)
-                                            if img_url:
-                                                image_url = img_url
-                                                break
-                                except Exception as e:
-                                    logging.error(f"Error getting event image: {str(e)}")
+                                    image_url = None
+                                    try:
+                                        keywords = extract_keywords_from_prompt(selected_event['title'])
+                                        for keyword in keywords:
+                                            if keyword and len(keyword.strip()) >= 3:
+                                                img_url = fetch_image_for_keyword(keyword, st.session_state.GOOGLE_MAPS_API_KEY)
+                                                if img_url:
+                                                    image_url = img_url
+                                                    break
+                                    except Exception as e:
+                                        logging.error(f"Error getting event image: {str(e)}")
 
-                                recommendation = {
-                                    "type": "event",
-                                    "name": event['title'],
-                                    "description": event_description,
-                                    "image_url": image_url,
-                                    "activity_type": top_interest,
-                                    "event_data": event
-                                }
+                                    recommendation = {
+                                        "type": "event",
+                                        "name": selected_event['title'],
+                                        "description": event_description,
+                                        "image_url": image_url,
+                                        "activity_type": top_interest,
+                                        "event_data": selected_event
+                                    }
 
                     if recommendation is None:
                         places = fetch_places(user, top_interest, st.session_state.GOOGLE_MAPS_API_KEY)
@@ -325,6 +335,12 @@ def render_main_view():
 
     with col2:
         if st.button("👎 Show me something else"):
+            if recommendation and recommendation.get("type") == "event":
+                event_data = recommendation.get("event_data", {})
+                event_id = event_data.get("id")
+                if event_id:
+                    mark_event_rejected(event_id)
+            
             item_data = {
                 "name": recommendation.get("name", "Unknown"),
                 "type": recommendation.get("activity_type", "Unknown")
