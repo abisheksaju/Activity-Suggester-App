@@ -516,7 +516,7 @@ def get_synthetic_user():
         ],
         "interests": {
             "event": 0.81,
-            "travel: 0.98
+            "travel": 0.98,
             "food": 0.18,
             "news": 0.15,
             "shopping": 0.13,
@@ -1310,8 +1310,8 @@ def get_user_preferences_db():
         st.session_state.user_preferences = {
             "category_preferences": {
                 "food": 0.5,
-                "travel": 0.7",
-                "event: 0.9"
+                "travel": 0.7,
+                "event": 0.9,
                 "shopping": 0.5,
                 "gaming": 0.5,
                 "news": 0.5,
