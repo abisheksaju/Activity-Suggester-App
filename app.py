@@ -123,7 +123,7 @@ model = st.session_state.model
 
 
 # App Header
-st.title("What should I do now?")
+st.title(Plan Less, Live More!")
 
 # Session State Initialization for Weekend Planner
 if "weekend_initialized" not in st.session_state:
