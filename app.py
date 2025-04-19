@@ -159,10 +159,12 @@ def render_main_view():
             try:
                 top_interest = top_activity_interest_llm(user)
                 st.session_state.top_interest = top_interest
+                add_debug_log(f"Top interest determined: {top_interest}")
 
                 decision_prompt = build_llm_decision_prompt(user, top_interest)
                 decision_response = st.session_state.model.generate_content(decision_prompt)
                 decision = decision_response.text.strip().lower()
+                add_debug_log(f"LLM decision: {decision} for interest: {top_interest}")
 
                 recommendation = None
 
@@ -188,6 +190,7 @@ def render_main_view():
                         "concerts", "festivals", "events", "arts"
                     ]
                     is_event_related = top_interest.lower() in [i.lower() for i in event_related_interests]
+                    add_debug_log(f"Is interest event-related: {is_event_related}")
 
                     if is_event_related:
                         city = user.get("location", {}).get("city", "")
@@ -204,10 +207,14 @@ def render_main_view():
                             start_date=start_date,
                             end_date=end_date
                         )
+                        add_debug_log(f"Events API call: {'succeeded' if events_found else 'failed'}")
 
                         if events_found and has_more_events():
+                            add_debug_log("Found available events to display")
                             event = get_next_event_for_display()
+                            add_debug_log(f"Retrieved event: {'successful' if event else 'failed'}")
                             if event:
+                                add_debug_log(f"Event title: {event.get('title', 'No title')}")
                                 event_description = f"Check out this event: **{event['title']}**\n\n"
                                 event_description += f"📅 **Date:** {event['date']}\n"
                                 event_description += f"📍 **Location:** {event['location']}\n"
@@ -988,6 +995,30 @@ with st.sidebar.expander("🔄 Reset Options"):
                 if key != "initialized" and key not in ["GOOGLE_MAPS_API_KEY", "model", "ors_client", "gmaps_client"]:
                     del st.session_state[key]
             st.rerun()
+
+
+
+
+
+# Add to app.py near the bottom of the file
+with st.sidebar.expander("🔧 Debug Information", expanded=False):
+    if "debug_logs" not in st.session_state:
+        st.session_state.debug_logs = []
+    
+    st.write("### Recent Debug Logs")
+    for log in st.session_state.debug_logs[-10:]:  # Show last 10 logs
+        st.text(log)
+    
+    if st.button("Clear Debug Logs"):
+        st.session_state.debug_logs = []
+        st.rerun()
+    
+    # Add function to app.py to add debug logs
+    def add_debug_log(message):
+        if "debug_logs" not in st.session_state:
+            st.session_state.debug_logs = []
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        st.session_state.debug_logs.append(f"[{timestamp}] {message}")
 
 # Footer
 st.sidebar.markdown("---")
