@@ -710,6 +710,7 @@ def render_quick_glance_view():
    if "diversity_plan" not in st.session_state:
        # Generate a new diversity plan for all slots
        st.session_state.diversity_plan = plan_diverse_activities(st.session_state.weekend_slots)
+       add_debug_log(f"Diversity plan created: {st.session_state.diversity_plan}")
    
    # Ensure all slots have recommendations based on the diversity plan
    for slot in st.session_state.weekend_slots:
@@ -727,6 +728,8 @@ def render_quick_glance_view():
        slot_plan = st.session_state.diversity_plan.get(slot_id, {})
        planned_activity_type = slot_plan.get("activity_type", "indoor")  # Default to indoor if no plan
        planned_interest = slot_plan.get("interest", None)
+
+       add_debug_log(f"Slot {slot_id} plan → Type: {planned_activity_type}, Interest: {planned_interest}")
        
        with st.spinner(f"Finding an activity for {slot['day']} {slot['start_time']}-{slot['end_time']}..."):
            # Use the planned interest instead of calculating the top interest independently
