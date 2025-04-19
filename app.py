@@ -252,7 +252,7 @@ def render_main_view():
                                     recommendation = {
                                         "type": "event",
                                         "name": selected_event['title'],
-                                        "description": event_description,
+                                        "description": description,
                                         "image_url": image_url,
                                         "activity_type": top_interest,
                                         "event_data": selected_event
