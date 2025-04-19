@@ -193,7 +193,7 @@ def render_main_view():
                 elif decision == "outdoor":
                     event_related_interests = [
                         "music", "sports", "entertainment", "theatre",
-                        "concerts", "festivals", "events", "arts"
+                        "concerts", "festivals", "event", "arts"
                     ]
                     is_event_related = top_interest.lower() in [i.lower() for i in event_related_interests]
                     add_debug_log(f"Is interest event-related: {is_event_related}")
