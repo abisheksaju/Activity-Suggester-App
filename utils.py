@@ -423,7 +423,7 @@ def fetch_and_store_events(interest=None, city=None, country_code=None, location
                     print("❌ No events found in Ticketmaster response")
 
             elif api_name == "eventbrite":
-                 events = fetch_eventbrite_events(
+                events = fetch_eventbrite_events(
                     api_key=api_key,
                     location=location or city,
                     **common_params
