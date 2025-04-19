@@ -2039,35 +2039,17 @@ Mention only one event by name.
 
 
 def get_multiple_events(count=5, exclude_ids=None):
-    """
-    Retrieves multiple events from storage, excluding events with IDs in `exclude_ids`.
-
-    Args:
-        count (int): Number of events to retrieve
-        exclude_ids (set): Set of event IDs to skip
-
-    Returns:
-        list: A list of event objects
-    """
-    global event_storage
+    if exclude_ids is None:
+        exclude_ids = set()
+    
     events = []
-    exclude_ids = exclude_ids or set()
-
-    # Save current index to restore later
-    original_index = event_storage.current_index
-
-    temp_index = event_storage.current_index
-
-    while temp_index < len(event_storage.events) and len(events) < count:
-        event = event_storage.events[temp_index]
-        if event.get("id") not in exclude_ids:
-            events.append(event)
-        temp_index += 1
-
-    # Restore original index (non-consuming)
-    event_storage.current_index = original_index
-
+    while len(events) < count and event_storage.has_more_events():
+        next_event = event_storage.get_next_event()
+        if next_event and next_event.get("id") not in exclude_ids:
+            events.append(next_event)
+    
     return events
+
 
 
 
