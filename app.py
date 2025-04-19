@@ -60,7 +60,6 @@ from utils import (
     mark_event_rejected,
     get_multiple_events,
     choose_event,
-    
     AppError, APIError, LLMError, ImageError
 )
 from utils import astra_manager
