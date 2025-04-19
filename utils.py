@@ -1319,9 +1319,9 @@ def get_user_preferences_db():
         st.session_state.user_preferences = {
             "category_preferences": {
                 "food": 0.2,
-                "travel": 0.2,
+                "travel": 0.9,
                 "event": 0.9,
-                "shopping": 0.3,
+                "music": 0.8,
                 "gaming": 0.3,
                 "news": 0.2,
                 "fitness": 0.3,
