@@ -341,6 +341,8 @@ def render_main_view():
                 event_id = event_data.get("id")
                 if event_id:
                     mark_event_rejected(event_id)
+                    st.session_state.rejected_event_ids.add(event_id)
+                    st.session_state.shown_event_ids.discard(event_id) 
             
             item_data = {
                 "name": recommendation.get("name", "Unknown"),
