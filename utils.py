@@ -2060,6 +2060,295 @@ def mark_event_rejected(event_id):
 
 
 
+def plan_diverse_activities(weekend_slots):
+    """
+    Creates a holistic plan for diverse activities across all weekend slots.
+    
+    Args:
+        weekend_slots (list): List of all weekend time slots
+        
+    Returns:
+        dict: A diversity plan with assigned activity types and interests for each slot
+    """
+    # Initialize diversity plan
+    diversity_plan = {}
+    
+    # Get existing booked slots to respect user choices
+    booked_slots = st.session_state.get("booked_slots", {})
+    
+    # Prepare slots by day and time period
+    saturday_slots = [s for s in weekend_slots if "saturday" in s["day"].lower()]
+    sunday_slots = [s for s in weekend_slots if "sunday" in s["day"].lower()]
+    
+    # Sort slots by start time
+    saturday_slots.sort(key=lambda x: parse_time_to_minutes(x["start_time"]))
+    sunday_slots.sort(key=lambda x: parse_time_to_minutes(x["start_time"]))
+    
+    # Allocate core activity types across weekend using a balanced approach
+    # We want a mix of indoor, outdoor, and events
+    all_slots = saturday_slots + sunday_slots
+    
+    # Start with initial allocation
+    activity_types = ["indoor", "outdoor", "event"] * (len(all_slots) // 3 + 1)
+    activity_types = activity_types[:len(all_slots)]
+    
+    # Shuffle to avoid predictable patterns while maintaining balance
+    random.shuffle(activity_types)
+    
+    # Map slots to time periods
+    for i, slot in enumerate(all_slots):
+        slot_id = slot["id"]
+        
+        # Skip already booked slots
+        if slot_id in booked_slots:
+            # Respect the user's choice but still track for diversity
+            booked_activity = booked_slots[slot_id]
+            diversity_plan[slot_id] = {
+                "activity_type": booked_activity.get("type", "indoor"),
+                "interest": booked_activity.get("activity_type", "general"),
+                "is_booked": True
+            }
+            continue
+        
+        # Determine time period
+        time_period = determine_time_period(slot["start_time"])
+        
+        # Get appropriate activity type for this slot
+        # If we're on the last few slots, ensure balance
+        if i >= len(all_slots) - 3:
+            # Count types so far
+            type_counts = {}
+            for s_id, plan in diversity_plan.items():
+                a_type = plan.get("activity_type")
+                type_counts[a_type] = type_counts.get(a_type, 0) + 1
+            
+            # Find underrepresented type
+            if type_counts.get("indoor", 0) <= type_counts.get("outdoor", 0) and type_counts.get("indoor", 0) <= type_counts.get("event", 0):
+                activity_type = "indoor"
+            elif type_counts.get("outdoor", 0) <= type_counts.get("event", 0):
+                activity_type = "outdoor"
+            else:
+                activity_type = "event"
+        else:
+            # Use pre-shuffled, balanced list
+            activity_type = activity_types[i]
+            
+            # Adjust type based on time appropriateness
+            activity_type = adjust_activity_type_for_time(activity_type, time_period)
+        
+        # Select a diverse interest for this slot (will be done separately)
+        diversity_plan[slot_id] = {
+            "activity_type": activity_type,
+            "time_period": time_period,
+            "is_booked": False
+        }
+    
+    # Now select diverse interests for the slots
+    used_interests = {}
+    for slot_id in diversity_plan:
+        if diversity_plan[slot_id].get("is_booked", False):
+            # Skip booked slots for interest selection
+            continue
+            
+        # Select diverse interest for this activity type and time period
+        selected_interest = select_diverse_interest(used_interests, 
+                                                   diversity_plan[slot_id]["activity_type"],
+                                                   diversity_plan[slot_id]["time_period"])
+        
+        diversity_plan[slot_id]["interest"] = selected_interest
+        
+        # Track that we've used this interest
+        used_interests[selected_interest] = used_interests.get(selected_interest, 0) + 1
+    
+    return diversity_plan
+
+
+def determine_time_period(time_str):
+    """
+    Determines the time period (morning, afternoon, evening) based on the time.
+    
+    Args:
+        time_str (str): Time string (e.g., "7 AM", "3 PM")
+        
+    Returns:
+        str: Time period ("morning", "afternoon", or "evening")
+    """
+    # Convert time to minutes since midnight
+    minutes = parse_time_to_minutes(time_str)
+    
+    # Classify based on time ranges
+    if minutes < 12 * 60:  # Before noon
+        return "morning"
+    elif minutes < 17 * 60:  # Before 5 PM
+        return "afternoon"
+    else:
+        return "evening"
+
+
+def adjust_activity_type_for_time(activity_type, time_period):
+    """
+    Adjusts activity types based on time appropriateness.
+    
+    Args:
+        activity_type (str): Proposed activity type
+        time_period (str): Time period of the slot
+        
+    Returns:
+        str: Potentially adjusted activity type
+    """
+    # Some simple rules for time appropriateness
+    if time_period == "morning":
+        # Morning is great for outdoor activities, less ideal for events
+        if activity_type == "event" and random.random() < 0.7:
+            return "outdoor"
+    
+    elif time_period == "evening":
+        # Evening is better for events, less ideal for outdoor activities
+        if activity_type == "outdoor" and random.random() < 0.7:
+            return "event" if random.random() < 0.5 else "indoor"
+    
+    # For afternoon, all activity types are generally appropriate
+    
+    return activity_type
+
+
+def select_diverse_interest(used_interests, activity_type, time_period):
+    """
+    Selects an interest category that promotes diversity, considering already used interests.
+    
+    Args:
+        used_interests (dict): Interests already used and their counts
+        activity_type (str): Type of activity (indoor, outdoor, event)
+        time_period (str): Time period (morning, afternoon, evening)
+        
+    Returns:
+        str: Selected interest category
+    """
+    # Get user interests and adjust based on previous selections
+    user = st.session_state.user
+    all_interests = get_adjusted_interests(user)
+    
+    # Add time-appropriate interests if they don't exist
+    time_appropriate_interests = {
+        "morning": ["fitness", "travel", "nature"],
+        "afternoon": ["shopping", "food", "travel", "event"],
+        "evening": ["music", "event", "food", "entertainment"]
+    }
+    
+    # Add type-appropriate interests
+    type_appropriate_interests = {
+        "indoor": ["cooking", "gaming", "reading", "art"],
+        "outdoor": ["travel", "sports", "fitness", "nature"],
+        "event": ["music", "entertainment", "arts", "sports"]
+    }
+    
+    # Combine user interests with appropriate ones for this slot
+    relevant_interests = dict(all_interests)
+    
+    # Add time and type appropriate interests if not already present
+    for interest in time_appropriate_interests.get(time_period, []):
+        if interest not in relevant_interests:
+            relevant_interests[interest] = 0.5  # Default medium score
+            
+    for interest in type_appropriate_interests.get(activity_type, []):
+        if interest not in relevant_interests:
+            relevant_interests[interest] = 0.5  # Default medium score
+    
+    # Apply diversity adjustments - reduce score for frequently used interests
+    for interest, count in used_interests.items():
+        if interest in relevant_interests:
+            # Reduce by 20% for each previous use
+            relevant_interests[interest] *= max(0.2, 1.0 - (count * 0.2))
+    
+    # Select interest based on adjusted weights
+    interests = list(relevant_interests.keys())
+    weights = list(relevant_interests.values())
+    
+    # Normalize weights
+    total = sum(weights)
+    if total > 0:
+        weights = [w/total for w in weights]
+    else:
+        # Equal weights if all are zero
+        weights = [1.0/len(weights)] * len(weights)
+    
+    # Select based on weighted probabilities
+    selected_interest = random.choices(interests, weights=weights, k=1)[0]
+    
+    return selected_interest
+
+
+def balance_activity_types(weekend_slots, current_plan=None):
+    """
+    Ensures a balanced mix of activity types across the weekend.
+    
+    Args:
+        weekend_slots (list): List of all weekend slots
+        current_plan (dict, optional): Existing diversity plan to adjust
+        
+    Returns:
+        dict: Adjusted plan with balanced activity types
+    """
+    if current_plan is None:
+        current_plan = {}
+    
+    # Count current activity types
+    type_counts = {"indoor": 0, "outdoor": 0, "event": 0}
+    
+    for slot_id, plan in current_plan.items():
+        activity_type = plan.get("activity_type")
+        if activity_type in type_counts:
+            type_counts[activity_type] += 1
+    
+    # Calculate target counts
+    total_slots = len(weekend_slots)
+    target_per_type = total_slots / 3  # Aim for equal distribution
+    
+    # Identify underrepresented types
+    adjustments_needed = {}
+    for activity_type, count in type_counts.items():
+        if count < target_per_type:
+            adjustments_needed[activity_type] = target_per_type - count
+    
+    # Identify overrepresented types
+    overrepresented = []
+    for activity_type, count in type_counts.items():
+        if count > target_per_type:
+            # Add multiple times based on how overrepresented
+            for _ in range(int(count - target_per_type)):
+                overrepresented.append(activity_type)
+    
+    # Balance by adjusting non-booked slots
+    if adjustments_needed and overrepresented:
+        for slot_id, plan in current_plan.items():
+            # Skip booked slots
+            if plan.get("is_booked", False):
+                continue
+                
+            activity_type = plan["activity_type"]
+            
+            # Check if this type is overrepresented
+            if activity_type in overrepresented:
+                # Find an underrepresented type to switch to
+                for needed_type, needed_count in adjustments_needed.items():
+                    if needed_count > 0:
+                        # Switch this slot to the needed type
+                        current_plan[slot_id]["activity_type"] = needed_type
+                        
+                        # Update counts
+                        adjustments_needed[needed_type] -= 1
+                        overrepresented.remove(activity_type)
+                        
+                        break
+                        
+                # Stop if we've balanced everything
+                if not adjustments_needed or not overrepresented:
+                    break
+    
+    return current_plan
+
+
+
 
 
 class AstraManager:
