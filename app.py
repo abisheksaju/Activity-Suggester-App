@@ -267,7 +267,7 @@ def render_main_view():
                                         "event_data": selected_event
                                     }
 
-                    if recommendation is None:
+                    else:
                         places = fetch_places(user, top_interest, st.session_state.GOOGLE_MAPS_API_KEY)
                         selected_place, description = choose_place(user, places, st.session_state.model)
                         if selected_place:
