@@ -195,7 +195,7 @@ def render_main_view():
                 recommendation = None
 
                 if decision == "indoor":
-                    prompt = build_llm_prompt_indoor(user, top_interest)
+                    prompt = (user, top_interest)
                     response = st.session_state.model.generate_content(prompt)
                     activity_description = response.text.strip()
 
@@ -287,7 +287,7 @@ def render_main_view():
                             }
 
                 else:
-                    prompt = build_llm_prompt_indoor(user, top_interest)
+                    prompt = (user, top_interest)
                     response = st.session_state.model.generate_content(prompt)
                     activity_description = response.text.strip()
                     main_keyword = extract_main_keywords(activity_description)
@@ -742,7 +742,7 @@ def render_quick_glance_view():
            # If the plan says this should be an indoor activity
            if planned_activity_type == "indoor":
                # Generate indoor activity based on the planned interest
-               prompt = build_llm_prompt_indoor(user, top_interest)
+               prompt = build_llm_prompt_indoor(user, top_interest,user_feedback=slot_context)
                slot_context = f"You have {slot['duration_hours']} hours available on {slot['day']} from {slot['start_time']} to {slot['end_time']}."
                prompt = prompt.replace("My context:", f"My context:\n- {slot_context}\n-")
                
