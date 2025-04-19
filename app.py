@@ -143,27 +143,28 @@ st.title("Plan Less, Live More!")
 if "weekend_initialized" not in st.session_state:
 
     if "quick_glance_activity_registry" not in st.session_state:
-    st.session_state.quick_glance_activity_registry = {
-        "event_ids": set(),  # Store event IDs to avoid duplicates
-        "place_ids": set(),  # Store place IDs to avoid duplicates
-        "activity_descriptions": set(),  # Store hashes of activity descriptions
-    }
+        st.session_state.quick_glance_activity_registry = {
+            "event_ids": set(),  # Store event IDs to avoid duplicates
+            "place_ids": set(),  # Store place IDs to avoid duplicates
+            "activity_descriptions": set(),  # Store hashes of activity descriptions
+        }
+
     # Get basic user data
     if "user" not in st.session_state:
-       user = get_synthetic_user()
-       st.session_state.user = user
+        user = get_synthetic_user()
+        st.session_state.user = user
     else:
-       user = st.session_state.user
-   
-   # Get weekend slots
-   weekend_slots = get_synthetic_weekend_slots()
-    
-   # Initialize weekend planning session state variables
-   st.session_state.weekend_slots = weekend_slots
-   st.session_state.booked_slots = {}
-   st.session_state.current_view = "main"
-   st.session_state.slot_recommendations = {}
-   st.session_state.weekend_initialized = True
+        user = st.session_state.user
+
+    # Get weekend slots
+    weekend_slots = get_synthetic_weekend_slots()
+
+    # Initialize weekend planning session state variables
+    st.session_state.weekend_slots = weekend_slots
+    st.session_state.booked_slots = {}
+    st.session_state.current_view = "main"
+    st.session_state.slot_recommendations = {}
+    st.session_state.weekend_initialized = True
 
 
 
