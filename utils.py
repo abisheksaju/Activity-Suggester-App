@@ -503,7 +503,7 @@ def get_synthetic_user():
     user_data = {
         "user_id": "us001",
         "location": {
-            "city": "San Francisco",
+            "city": "New York",
             "lat": 37.7749,
             "lon": 122.4194
         },
@@ -1309,14 +1309,14 @@ def get_user_preferences_db():
     if "user_preferences" not in st.session_state:
         st.session_state.user_preferences = {
             "category_preferences": {
-                "food": 0.5,
-                "travel": 0.7,
+                "food": 0.2,
+                "travel": 0.2,
                 "event": 0.9,
-                "shopping": 0.5,
-                "gaming": 0.5,
-                "news": 0.5,
-                "fitness": 0.7,
-                "cooking": 0.5
+                "shopping": 0.3,
+                "gaming": 0.3,
+                "news": 0.2,
+                "fitness": 0.3,
+                "cooking": 0.2
             },
             "liked_places": [],
             "disliked_places": []
