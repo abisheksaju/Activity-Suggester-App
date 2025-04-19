@@ -1081,7 +1081,7 @@ def build_llm_decision_prompt(user, top_interest):
     
     prompt = f"""
     Based on this context, decide if I should suggest an indoor or outdoor activity.
-    Just respond with "indoor" or "outdoor".
+    !Just respond with "indoor" or "outdoor"!
     
     User context:
     - Current weather: {weather}
