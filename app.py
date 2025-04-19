@@ -158,6 +158,7 @@ def render_main_view():
    # Check if primary recommendation exists, if not generate one
    if "primary_recommendation" not in st.session_state:
        with st.spinner("Finding the perfect activity for you..."):
+        try:
            # Get top interest
            top_interest = top_activity_interest_llm(user)
            st.session_state.top_interest = top_interest
@@ -279,6 +280,9 @@ def render_main_view():
                    "image_url": image_url,
                    "activity_type": top_interest
                }
+          except Exception as e:
+              st.error(f"Something went wrong while generating the activity: {str(e)}")
+              logging.exception(e)
            
            st.session_state.primary_recommendation = recommendation
            st.session_state.last_short_response = recommendation["description"]
