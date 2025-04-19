@@ -591,7 +591,7 @@ def render_slot_recommendation(slot_id):
     if recommendation.get("image_url"):
         st.image(recommendation["image_url"], use_container_width=True)
 
-    st.subheader("\ud83d\udd0d Suggested Activity")
+    st.subheader("Suggested Activity")
     st.write(recommendation["description"])
 
     success = astra_manager.record_interaction({
@@ -611,12 +611,12 @@ def render_slot_recommendation(slot_id):
     })
 
     if not success:
-        st.warning("\u26a0\ufe0f Failed to save interaction to database.")
+        st.warning("Failed to save interaction to database.")
 
     if not is_booked:
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("\ud83d\udc4d I like it!", key=f"like_slot_{slot_id}"):
+            if st.button("I like it!", key=f"like_slot_{slot_id}"):
                 item_data = {
                     "name": recommendation.get("name", "Unknown"),
                     "type": recommendation.get("activity_type", "Unknown")
@@ -626,7 +626,7 @@ def render_slot_recommendation(slot_id):
                 st.success("Great! I'll remember you liked this!")
 
         with col2:
-            if st.button("\ud83d\udc4e Show me something else", key=f"dislike_slot_{slot_id}"):
+            if st.button("👎Show me something else", key=f"dislike_slot_{slot_id}"):
                 item_data = {
                     "name": recommendation.get("name", "Unknown"),
                     "type": recommendation.get("activity_type", "Unknown")
@@ -655,7 +655,7 @@ def render_slot_recommendation(slot_id):
                 event_url = recommendation["event_data"]["event_url"]
                 ticket_html = f"""
                 <div style="margin-top: 20px; padding: 10px; background-color: #f0f0f0; border-radius: 5px;">
-                    <strong>\ud83c\udf9b Get Tickets:</strong> <a href="{event_url}" target="_blank">Click here to view tickets/details</a>
+                    <strong>🎫Get Tickets:</strong> <a href="{event_url}" target="_blank">Click here to view tickets/details</a>
                 </div>
                 """
                 st.markdown(ticket_html, unsafe_allow_html=True)
@@ -663,7 +663,7 @@ def render_slot_recommendation(slot_id):
                 st.markdown(maps_html, unsafe_allow_html=True)
                 show_booking_options(recommendation)
 
-        if st.button("\ud83d\udccc Book this slot", key=f"book_slot_{slot_id}"):
+        if st.button("Book this slot", key=f"book_slot_{slot_id}"):
             st.session_state.booked_slots[slot_id] = recommendation
             success = astra_manager.record_interaction({
                 "user_id": user.get("user_id", "unknown"),
@@ -677,7 +677,7 @@ def render_slot_recommendation(slot_id):
             st.success(f"Activity booked for {slot['day']} {slot['start_time']} - {slot['end_time']}!")
             st.rerun()
 
-    if st.button("\u2190 Back to main view", key=f"back_slot_{slot_id}"):
+    if st.button("Back to main view", key=f"back_slot_{slot_id}"):
         st.session_state.current_view = "main"
         st.rerun()
 
