@@ -1921,6 +1921,168 @@ Mention only one place by name.
         return None, "We encountered an unexpected error. Let's suggest an indoor activity instead."
 
 
+@safe_api_call
+def choose_event(user, events, model, user_feedback=None):
+    """
+    Choose the best event from options based on user context and preferences.
+    
+    Args:
+        user (dict): User context data
+        events (list): List of event objects to choose from
+        model: The LLM model to use for selection
+        user_feedback (str, optional): Any previous user feedback to incorporate
+        
+    Returns:
+        tuple: (selected_event, description) - The chosen event and LLM description
+    """
+    if not events:
+        logger.warning("No events found to choose from")
+        return None, "We couldn't find any interesting events nearby. Let's suggest something else instead."
+
+    try:
+        if "rejected_event_ids" not in st.session_state:
+            st.session_state.rejected_event_ids = []
+            
+        # Get suggestion history
+        history = get_suggestion_history()
+        previous_events = [item for item in history.get("indoor", []) + history.get("outdoor", []) 
+                          if "event" in item.lower()]
+
+        # Filter out previously rejected and suggested events
+        filtered_events = [
+            event for event in events 
+            if event.get("id") not in st.session_state.rejected_event_ids
+        ]
+        
+        if not filtered_events:
+            # If we've exhausted all options, allow reusing events but mention it
+            logger.warning("All events have been seen before, allowing repeats")
+            filtered_events = [
+                event for event in events 
+                if event.get("id") not in st.session_state.rejected_event_ids
+            ]
+            
+            if not filtered_events:
+                return None, "You've seen all available events. Let's suggest something different instead."
+
+        # Use only the first 5 events to keep the prompt manageable
+        filtered_events = filtered_events[:5]
+        top_interest = st.session_state.get("top_interest", "event")
+        personalized_context = build_personalized_context(user, top_interest)
+
+        # Construct LLM prompt
+        feedback_note = user_feedback + " " if user_feedback else ""
+        prompt = f"""
+{feedback_note}You're a smart assistant helping a user decide which is the best event to attend.
+
+User preferences:
+- Weather: {user.get("weather", "Unknown")}
+- Time: {user.get("current_time", "Unknown")}
+- Top interest: {top_interest}
+- Free hours: {user.get("free_hours", "Unknown")}
+
+User History and Preferences:
+{personalized_context}
+
+"""
+        # Add information about previous suggestions if any
+        if previous_events:
+            prompt += "\nI want to suggest a NEW event the user hasn't seen before.\n"
+        
+        prompt += "Here are some events happening nearby:\n"
+
+        for i, event in enumerate(filtered_events, 1):
+            prompt += f"\n{i}. {event.get('title', 'Unnamed event')} - "
+            
+            # Add date and time if available
+            if event.get('date'):
+                prompt += f"On {event.get('date')} "
+                if event.get('time'):
+                    prompt += f"at {event.get('time')} "
+            
+            # Add location if available
+            if event.get('location'):
+                prompt += f"at {event.get('location')}. "
+            
+            # Add venue if available and different from location
+            if event.get('venue') and event.get('venue') != event.get('location'):
+                prompt += f"Venue: {event.get('venue')}. "
+
+        prompt += """
+❗ Choose only one event. Do not list or compare options. 
+Make your response in 1–2 short, fun, personal sentences that could show up on a phone lockscreen.
+Mention only one event by name.
+"""
+
+        response = model.generate_content(prompt)
+        description = response.text.strip()
+
+        # Extract the name of the event mentioned from the response
+        selected_event = filtered_events[0]  # Default fallback
+
+        for event in filtered_events:
+            event_title = event.get("title", "").lower()
+            if event_title and event_title in description.lower():
+                selected_event = event
+                break
+
+        return selected_event, description
+
+    except LLMError as e:
+        logger.error(f"LLM Error in choose_event: {str(e)}")
+        return None, "Sorry, we had an issue generating personalized event recommendations."
+    except Exception as e:
+        logger.error(f"Error in choose_event: {str(e)}")
+        logger.error(traceback.format_exc())
+        return None, "We encountered an unexpected error with event recommendations."
+
+
+
+def get_multiple_events(count=5):
+    """
+    Retrieves multiple events from storage.
+    
+    Args:
+        count (int): Number of events to retrieve
+        
+    Returns:
+        list: A list of event objects
+    """
+    global event_storage
+    events = []
+    
+    # Save current index to restore it later
+    original_index = event_storage.current_index
+    
+    # Check how many events are available
+    available = 0
+    temp_index = event_storage.current_index
+    while temp_index < len(event_storage.events):
+        available += 1
+        temp_index += 1
+    
+    # Retrieve up to count events
+    fetch_count = min(count, available)
+    for _ in range(fetch_count):
+        event = event_storage.get_next_event()
+        if event:
+            events.append(event)
+    
+    # Restore original index (so we don't actually consume these events yet)
+    event_storage.current_index = original_index
+    
+    return events
+
+
+def mark_event_rejected(event_id):
+    """Mark an event as rejected to avoid showing it again"""
+    if event_id and "rejected_event_ids" in st.session_state:
+        st.session_state.rejected_event_ids.add(event_id)
+
+
+
+
+
 class AstraManager:
     """
     Simplified AstraManager for hackathon demo.
