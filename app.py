@@ -281,7 +281,7 @@ def render_main_view():
                                 "activity_type": top_interest
                             }
 
-                if recommendation is None:
+                else:
                     prompt = build_llm_prompt_indoor(user, top_interest)
                     response = st.session_state.model.generate_content(prompt)
                     activity_description = response.text.strip()
