@@ -752,34 +752,41 @@ def render_quick_glance_view():
                                )
                                
                                if events_found and has_more_events():
-                                   event = get_next_event_for_display()
-                                   if event:
-                                       # Format event for this slot
-                                       event_description = f"Check out this event: **{event['title']}**\n\n"
-                                       event_description += f"📅 **Date:** {event['date']}\n"
-                                       event_description += f"📍 **Location:** {event['location']}\n"
-                                       
-                                       # Get image for event
-                                       image_url = None
-                                       try:
-                                           keywords = extract_keywords_from_prompt(event['title'])
-                                           for keyword in keywords:
-                                               if keyword and len(keyword.strip()) >= 3:
-                                                   img_url = fetch_image_for_keyword(keyword, st.session_state.GOOGLE_MAPS_API_KEY)
-                                                   if img_url:
-                                                       image_url = img_url
-                                                       break
-                                       except Exception as e:
-                                           logging.error(f"Error getting event image: {str(e)}")
-                                       
-                                       recommendation = {
-                                           "type": "event",
-                                           "name": event['title'],
-                                           "description": event_description,
-                                           "image_url": image_url,
-                                           "activity_type": top_interest,
-                                           "event_data": event
-                                       }
+                                    exclude_ids = st.session_state.rejected_event_ids.union(st.session_state.shown_event_ids)
+                                    available_events = get_multiple_events(count=5, exclude_ids=exclude_ids)
+                                    if available_events:
+                                        selected_event, description = choose_event(user, available_events, st.session_state.model)
+                                        if selected_event:
+                                            event_id = selected_event.get("id")
+                                            if event_id:
+                                                st.session_state.shown_event_ids.add(event_id)
+                                            event_description = f"Check out this event: **{selected_event['title']}**\n\n"
+                                            event_description += f"📅 **Date:** {selected_event['date']}\n"
+                                            event_description += f"📍 **Location:** {selected_event['location']}\n"
+                                            if selected_event.get("venue"):
+                                                event_description += f"🏢 **Venue:** {selected_event['venue']}\n"
+        
+                                            image_url = None
+                                            try:
+                                                keywords = extract_keywords_from_prompt(selected_event['title'])
+                                                for keyword in keywords:
+                                                    if keyword and len(keyword.strip()) >= 3:
+                                                        img_url = fetch_image_for_keyword(keyword, st.session_state.GOOGLE_MAPS_API_KEY)
+                                                        if img_url:
+                                                            image_url = img_url
+                                                            break
+                                            except Exception as e:
+                                                logging.error(f"Error getting event image: {str(e)}")
+        
+                                            recommendation = {
+                                                "type": "event",
+                                                "name": selected_event['title'],
+                                                "description": description,
+                                                "image_url": image_url,
+                                                "activity_type": top_interest,
+                                                "event_data": selected_event
+                                            }
+
                                        # Successfully created event recommendation
                                        st.session_state.slot_recommendations[slot_id] = recommendation
                                        
