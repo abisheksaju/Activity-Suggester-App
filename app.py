@@ -56,6 +56,12 @@ from utils import (
 )
 from utils import astra_manager
 
+def add_debug_log(message):
+    if "debug_logs" not in st.session_state:
+        st.session_state.debug_logs = []
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    st.session_state.debug_logs.append(f"[{timestamp}] {message}")
+
 
 st.set_page_config(page_title="Activity Suggester", layout="centered")
 
@@ -1013,12 +1019,7 @@ with st.sidebar.expander("🔧 Debug Information", expanded=False):
         st.session_state.debug_logs = []
         st.rerun()
     
-    # Add function to app.py to add debug logs
-    def add_debug_log(message):
-        if "debug_logs" not in st.session_state:
-            st.session_state.debug_logs = []
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        st.session_state.debug_logs.append(f"[{timestamp}] {message}")
+   
 
 # Footer
 st.sidebar.markdown("---")
