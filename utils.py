@@ -511,9 +511,9 @@ def get_synthetic_user():
     user_data = {
         "user_id": "us001",
         "location": {
-            "city": "New York",
-            "lat": 37.7749,
-            "lon": 122.4194
+            "city": "Banglore",
+            "lat": 12.9716,
+            "lon": 77.5946
         },
         "weather": "Clear",
         "current_time": "Tuesday 3 PM",
