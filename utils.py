@@ -1320,8 +1320,8 @@ def get_user_preferences_db():
             "category_preferences": {
                 "food": 0.2,
                 "travel": 0.9,
-                "event": 0.9,
-                "music": 0.8,
+                "event": 0.4,
+                "music": 0.7,
                 "gaming": 0.3,
                 "news": 0.2,
                 "fitness": 0.3,
