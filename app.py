@@ -636,7 +636,7 @@ def render_slot_recommendation(slot_id):
                     del st.session_state.slot_recommendations[slot_id]
                 st.rerun()
 
-        if st.button("\ud83d\udd0e Tell me more", key=f"more_slot_{slot_id}"):
+        if st.button("Tell me more", key=f"more_slot_{slot_id}"):
             item_data = {
                 "name": recommendation.get("name", "Unknown"),
                 "type": recommendation.get("activity_type", "Unknown")
