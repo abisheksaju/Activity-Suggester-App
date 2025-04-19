@@ -269,6 +269,7 @@ def render_main_view():
 
                     else:
                         places = fetch_places(user, top_interest, st.session_state.GOOGLE_MAPS_API_KEY)
+                        add_debug_log(f"Fetched {len(places)} places for interest '{top_interest}'")
                         selected_place, description = choose_place(user, places, st.session_state.model)
                         if selected_place:
                             image_url = fetch_place_image(selected_place, st.session_state.GOOGLE_MAPS_API_KEY)
