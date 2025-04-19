@@ -148,149 +148,142 @@ if "weekend_initialized" not in st.session_state:
 
 
 def render_main_view():
-   """
-   Renders the main view of the weekend planner with the primary recommendation
-   and buttons for time slots and quick glance.
-   """
-   # Get user data
-   user = st.session_state.user
+    """
+    Renders the main view of the weekend planner with the primary recommendation
+    and buttons for time slots and quick glance.
+    """
+    user = st.session_state.user
+
+    if "primary_recommendation" not in st.session_state:
+        with st.spinner("Finding the perfect activity for you..."):
+            try:
+                # Get top interest
+                top_interest = top_activity_interest_llm(user)
+                st.session_state.top_interest = top_interest
+
+                # Decide indoor or outdoor
+                decision_prompt = build_llm_decision_prompt(user, top_interest)
+                decision_response = st.session_state.model.generate_content(decision_prompt)
+                decision = decision_response.text.strip().lower()
+
+                recommendation = None  # Ensure it's initialized
+
+                if decision == "indoor":
+                    # Generate indoor activity
+                    prompt = build_llm_prompt_indoor(user, top_interest)
+                    response = st.session_state.model.generate_content(prompt)
+                    activity_description = response.text.strip()
+
+                    # Get image for activity
+                    main_keyword = extract_main_keywords(activity_description)
+                    image_url = fetch_image_for_keyword(main_keyword, st.session_state.GOOGLE_MAPS_API_KEY)
+
+                    recommendation = {
+                        "type": "indoor",
+                        "name": f"Indoor {top_interest} Activity",
+                        "description": activity_description,
+                        "image_url": image_url,
+                        "activity_type": top_interest
+                    }
+
+                elif decision == "outdoor":
+                    # Check if the user's top interest aligns with event categories
+                    event_related_interests = [
+                        "music", "sports", "entertainment", "theatre",
+                        "concerts", "festivals", "events", "arts"
+                    ]
+                    is_event_related = top_interest.lower() in [i.lower() for i in event_related_interests]
+
+                    if is_event_related:
+                        city = user.get("location", {}).get("city", "")
+                        country_code = user.get("location", {}).get("country_code", "US")
+                        today = datetime.now()
+                        saturday, sunday = get_upcoming_weekend(today)
+                        start_date = saturday.strftime("%Y-%m-%d")
+                        end_date = sunday.strftime("%Y-%m-%d")
+
+                        events_found = fetch_and_store_events(
+                            interest=top_interest,
+                            city=city,
+                            country_code=country_code,
+                            start_date=start_date,
+                            end_date=end_date
+                        )
+
+                        if events_found and has_more_events():
+                            event = get_next_event_for_display()
+                            if event:
+                                event_description = f"Check out this event: **{event['title']}**\n\n"
+                                event_description += f"📅 **Date:** {event['date']}\n"
+                                event_description += f"📍 **Location:** {event['location']}\n"
+                                if event.get("venue"):
+                                    event_description += f"🏢 **Venue:** {event['venue']}\n"
+
+                                image_url = None
+                                try:
+                                    keywords = extract_keywords_from_prompt(event['title'])
+                                    for keyword in keywords:
+                                        if keyword and len(keyword.strip()) >= 3:
+                                            img_url = fetch_image_for_keyword(keyword, st.session_state.GOOGLE_MAPS_API_KEY)
+                                            if img_url:
+                                                image_url = img_url
+                                                break
+                                except Exception as e:
+                                    logging.error(f"Error getting event image: {str(e)}")
+
+                                recommendation = {
+                                    "type": "event",
+                                    "name": event['title'],
+                                    "description": event_description,
+                                    "image_url": image_url,
+                                    "activity_type": top_interest,
+                                    "event_data": event
+                                }
+
+                    # Fallback to outdoor places if no valid event found
+                    if recommendation is None:
+                        places = fetch_places(user, top_interest, st.session_state.GOOGLE_MAPS_API_KEY)
+                        selected_place, description = choose_place(user, places, st.session_state.model)
+                        if selected_place:
+                            image_url = fetch_place_image(selected_place, st.session_state.GOOGLE_MAPS_API_KEY)
+                            recommendation = {
+                                "type": "outdoor",
+                                "place": selected_place,
+                                "name": selected_place.get("name", "Unknown place"),
+                                "description": description,
+                                "image_url": image_url,
+                                "activity_type": top_interest
+                            }
+
+                # Final fallback to indoor if all else fails
+                if recommendation is None:
+                    prompt = build_llm_prompt_indoor(user, top_interest)
+                    response = st.session_state.model.generate_content(prompt)
+                    activity_description = response.text.strip()
+                    main_keyword = extract_main_keywords(activity_description)
+                    image_url = fetch_image_for_keyword(main_keyword, st.session_state.GOOGLE_MAPS_API_KEY)
+
+                    recommendation = {
+                        "type": "indoor",
+                        "name": f"Indoor {top_interest} Activity",
+                        "description": activity_description,
+                        "image_url": image_url,
+                        "activity_type": top_interest
+                    }
+
+                # Save recommendation to session
+                st.session_state.primary_recommendation = recommendation
+                st.session_state.last_short_response = recommendation["description"]
+
+            except Exception as e:
+                st.error(f"Something went wrong while generating the activity: {str(e)}")
+                logging.exception(e)
+
+    # Display primary recommendation
+    recommendation = st.session_state.primary_recommendation
+
    
-   # Check if primary recommendation exists, if not generate one
-   if "primary_recommendation" not in st.session_state:
-       with st.spinner("Finding the perfect activity for you..."):
-        try:
-           # Get top interest
-           top_interest = top_activity_interest_llm(user)
-           st.session_state.top_interest = top_interest
-           
-           # Decide indoor or outdoor
-           decision_prompt = build_llm_decision_prompt(user, top_interest)
-           decision_response = st.session_state.model.generate_content(decision_prompt)
-           decision = decision_response.text.strip().lower()
-           
-           # Generate recommendation based on decision
-           if decision == "indoor":
-               # Generate indoor activity
-               prompt = build_llm_prompt_indoor(user, top_interest)
-               response = st.session_state.model.generate_content(prompt)
-               activity_description = response.text.strip()
-               
-               # Get image for activity
-               main_keyword = extract_main_keywords(activity_description)
-               image_url = fetch_image_for_keyword(main_keyword, st.session_state.GOOGLE_MAPS_API_KEY)
-               
-               recommendation = {
-                   "type": "indoor",
-                   "name": f"Indoor {top_interest} Activity",
-                   "description": activity_description,
-                   "image_url": image_url,
-                   "activity_type": top_interest
-               }
-           elif decision == "outdoor":
-               # Check if the user's top interest aligns with event categories
-               event_related_interests = ["music", "sports", "entertainment", "theatre", "concerts", "festivals", "events", "arts"]
-               
-               # See if the top interest is event-related
-               is_event_related = top_interest.lower() in [interest.lower() for interest in event_related_interests]
-               
-               # If interest is event-related, attempt to fetch events first
-               if is_event_related:
-                       # Get user location info
-                       city = user.get("location", {}).get("city", "")
-                       country_code = user.get("location", {}).get("country_code", "US")  # Default to US
-                       
-                       # Get upcoming weekend dates
-                       today = datetime.now()
-                       saturday, sunday = get_upcoming_weekend(today)
-                       
-                       # Format dates for API
-                       start_date = saturday.strftime("%Y-%m-%d")
-                       end_date = sunday.strftime("%Y-%m-%d")
-                       
-                       # Try to fetch events
-                       events_found = fetch_and_store_events(
-                           interest=top_interest,
-                           city=city,
-                           country_code=country_code,
-                           start_date=start_date,
-                           end_date=end_date
-                       )
-                       
-                       # If events were found, process and display them
-                       if events_found and has_more_events():
-                           # Get first event
-                           event = get_next_event_for_display()
-                           
-                           if event:
-                               # Format event description
-                               event_description = f"Check out this event: **{event['title']}**\n\n"
-                               event_description += f"📅 **Date:** {event['date']}\n"
-                               event_description += f"📍 **Location:** {event['location']}\n"
-                               if event.get('venue'):
-                                   event_description += f"🏢 **Venue:** {event['venue']}\n"
-                               
-                               # Get image for event
-                               image_url = None
-                               try:
-                                   keywords = extract_keywords_from_prompt(event['title'])
-                                   for keyword in keywords:
-                                       if keyword and len(keyword.strip()) >= 3:
-                                           img_url = fetch_image_for_keyword(keyword, st.session_state.GOOGLE_MAPS_API_KEY)
-                                           if img_url:
-                                               image_url = img_url
-                                               break
-                               except Exception as e:
-                                   logging.error(f"Error getting event image: {str(e)}")
-                               
-                               recommendation = {
-                                   "type": "event",
-                                   "name": event['title'],
-                                   "description": event_description,
-                                   "image_url": image_url,
-                                   "activity_type": top_interest,
-                                   "event_data": event
-                               }
-                           else:
-                               # Fall back to regular outdoor options if no events available
-                               places = fetch_places(user, top_interest, st.session_state.GOOGLE_MAPS_API_KEY)
-                               selected_place, description = choose_place(user, places, st.session_state.model)
-                               
-                               if selected_place:
-                                   image_url = fetch_place_image(selected_place, st.session_state.GOOGLE_MAPS_API_KEY)
-                                   recommendation = {
-                                       "type": "outdoor",
-                                       "place": selected_place,
-                                       "name": selected_place.get("name", "Unknown place"),
-                                       "description": description,
-                                       "image_url": image_url,
-                                       "activity_type": top_interest
-                                   }
-           else:
-               # Fallback to indoor if no places found
-               prompt = build_llm_prompt_indoor(user, top_interest)
-               response = st.session_state.model.generate_content(prompt)
-               activity_description = response.text.strip()
-               main_keyword = extract_main_keywords(activity_description)
-               image_url = fetch_image_for_keyword(main_keyword, st.session_state.GOOGLE_MAPS_API_KEY)
-               
-               recommendation = {
-                   "type": "indoor",
-                   "name": f"Indoor {top_interest} Activity",
-                   "description": activity_description,
-                   "image_url": image_url,
-                   "activity_type": top_interest
-               }
-          except Exception as e:
-              st.error(f"Something went wrong while generating the activity: {str(e)}")
-              logging.exception(e)
-           
-           st.session_state.primary_recommendation = recommendation
-           st.session_state.last_short_response = recommendation["description"]
-   
-   # Display primary recommendation
-   recommendation = st.session_state.primary_recommendation
-   
-   # Display image if available
+ # Display image if available
    if recommendation.get("image_url"):
        st.image(recommendation["image_url"], use_container_width=True)
    
