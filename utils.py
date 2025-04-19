@@ -1093,7 +1093,8 @@ def build_llm_decision_prompt(user, top_interest):
     Consider:
     - If it's late evening, raining, or very hot, indoor might be better
     - If it's morning or daytime with good weather, outdoor might be better
-    - Also consider the interest - some activities like gaming are typically indoor
+    - Also consider the interest - some activities like gaming are typically indoor, but events and travel are typically outdoor
+    - If weather is "Clear" or "Sunny", strongly prefer outdoor activities
     - Also consider the location of the user
     """
     return prompt.strip()
