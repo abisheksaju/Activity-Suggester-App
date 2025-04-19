@@ -649,7 +649,7 @@ def render_slot_recommendation(slot_id):
                 recommendation.get("activity_type", ""),
                 recommendation
             )
-            st.markdown(f"### \ud83d\udcd6 More details:\n\n{detailed}")
+            st.markdown(f"### More details:\n\n{detailed}")
 
             if recommendation.get("type") == "event" and recommendation.get("event_data", {}).get("event_url"):
                 event_url = recommendation["event_data"]["event_url"]
