@@ -507,12 +507,12 @@ def get_synthetic_user():
             "lat": 37.7749,
             "lon": 122.4194
         },
-        "weather": "Sunny",
-        "current_time": "Tuesday 4 PM",
+        "weather": "Clear",
+        "current_time": "Tuesday 3 PM",
         #"free_hours": 4,
         "calendar": [
             {"event": "Lunch with friend", "start": "1 PM", "end": "2 PM"},
-            {"event": "Office Meeting", "start": "6 PM", "end": "7 PM"}
+            {"event": "Office Meeting", "start": "8 PM", "end": "9 PM"}
         ],
         "interests": {
             "event": 0.81,
