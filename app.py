@@ -264,21 +264,21 @@ def render_main_view():
                                        "image_url": image_url,
                                        "activity_type": top_interest
                                    }
-                               else:
-                                   # Fallback to indoor if no places found
-                                   prompt = build_llm_prompt_indoor(user, top_interest)
-                                   response = st.session_state.model.generate_content(prompt)
-                                   activity_description = response.text.strip()
-                                   main_keyword = extract_main_keywords(activity_description)
-                                   image_url = fetch_image_for_keyword(main_keyword, st.session_state.GOOGLE_MAPS_API_KEY)
-                                   
-                                   recommendation = {
-                                       "type": "indoor",
-                                       "name": f"Indoor {top_interest} Activity",
-                                       "description": activity_description,
-                                       "image_url": image_url,
-                                       "activity_type": top_interest
-                                   }
+           else:
+               # Fallback to indoor if no places found
+               prompt = build_llm_prompt_indoor(user, top_interest)
+               response = st.session_state.model.generate_content(prompt)
+               activity_description = response.text.strip()
+               main_keyword = extract_main_keywords(activity_description)
+               image_url = fetch_image_for_keyword(main_keyword, st.session_state.GOOGLE_MAPS_API_KEY)
+               
+               recommendation = {
+                   "type": "indoor",
+                   "name": f"Indoor {top_interest} Activity",
+                   "description": activity_description,
+                   "image_url": image_url,
+                   "activity_type": top_interest
+               }
            
            st.session_state.primary_recommendation = recommendation
            st.session_state.last_short_response = recommendation["description"]
