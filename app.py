@@ -224,7 +224,8 @@ def render_main_view():
                         add_debug_log(f"Events API call: {'succeeded' if events_found else 'failed'}")
 
                         if events_found and has_more_events():
-                            available_events = get_multiple_events(count=5)
+                            exclude_ids = st.session_state.rejected_event_ids.union(st.session_state.shown_event_ids)
+                            available_events = get_multiple_events(count=5, exclude_ids=exclude_ids)
                             if available_events:
                                 selected_event, description = choose_event(user, available_events, st.session_state.model)
                                 if selected_event:
