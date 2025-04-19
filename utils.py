@@ -399,6 +399,7 @@ def fetch_and_store_events(interest=None, city=None, country_code=None, location
             continue
 
         try:
+            print(f"🔄 Trying API: {api_name}")
             if api_name == "ticketmaster":
                 events = fetch_ticketmaster_events(
                     api_key=api_key,
@@ -406,16 +407,23 @@ def fetch_and_store_events(interest=None, city=None, country_code=None, location
                     country_code=country_code,
                     **common_params
                 )
+
+                print(f"📊 Ticketmaster response: {events is not None}, has events: {bool(events and events.get('_embedded', {}).get('events'))}")
                 if events and events.get("_embedded", {}).get("events"):
                     formatted_events = [
                         format_event(e, "ticketmaster")
                         for e in events["_embedded"]["events"]
                     ]
+
+                    print(f"✅ Found {len(formatted_events)} events from Ticketmaster")
                     event_storage.add_events(formatted_events)
                     return True
 
+                else:
+                    print("❌ No events found in Ticketmaster response")
+
             elif api_name == "eventbrite":
-                events = fetch_eventbrite_events(
+                 events = fetch_eventbrite_events(
                     api_key=api_key,
                     location=location or city,
                     **common_params
