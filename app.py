@@ -194,7 +194,6 @@ def render_main_view():
                
                # If interest is event-related, attempt to fetch events first
                if is_event_related:
-                   try:
                        # Get user location info
                        city = user.get("location", {}).get("city", "")
                        country_code = user.get("location", {}).get("country_code", "US")  # Default to US
