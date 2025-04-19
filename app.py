@@ -459,7 +459,7 @@ def render_slot_recommendation(slot_id):
                     }
 
                 elif decision == "outdoor":
-                    event_related_interests = ["music", "sports", "entertainment", "theatre", "concerts", "festivals", "events", "arts"]
+                    event_related_interests = ["music", "sports", "entertainment", "theatre", "concerts", "festivals", "event", "arts"]
                     is_event_related = top_interest.lower() in [i.lower() for i in event_related_interests]
 
                     if is_event_related:
@@ -702,7 +702,7 @@ def render_quick_glance_view():
                    }
                elif decision == "outdoor":
                    # Check if event-related interest
-                   event_related_interests = ["music", "sports", "entertainment", "theatre", "concerts", "festivals", "events", "arts"]
+                   event_related_interests = ["music", "sports", "entertainment", "theatre", "concerts", "festivals", "event", "arts"]
                    is_event_related = top_interest.lower() in [interest.lower() for interest in event_related_interests]
                    
                    if is_event_related:
