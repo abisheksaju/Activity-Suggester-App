@@ -1159,12 +1159,20 @@ def fetch_places(user, interest_type, api_key):
         place_type = place_type_mapping.get(interest_type, 'point_of_interest')
         
         # Search for places
-        places_result = gmaps.places_nearby(
-            location=(lat, lon),
-            radius=20000,  # 20km radius
-            type=place_type,
-            open_now=True
-        )
+        if interest_type == "travel":
+            places_result = gmaps.places_nearby(
+                location=(lat, lon),
+                radius=20000,
+                type=place_type
+            )
+        else:
+            places_result = gmaps.places_nearby(
+                location=(lat, lon),
+                radius=20000,
+                type=place_type,
+                open_now=True
+            )
+
         
         return places_result.get('results', [])
     except Exception as e:
