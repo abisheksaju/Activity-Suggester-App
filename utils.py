@@ -1130,9 +1130,12 @@ def build_llm_prompt_indoor(user, top_interest, user_feedback=None):
     return prompt.strip()
 
 @safe_api_call
+
+
 def fetch_places(user, interest_type, api_key):
     """
-    Fetch places from Google Maps Places API based on user context and interest
+    Fetch places from Google Maps Places API based on user context and interest.
+    Falls back to keyword-based search for 'travel' if no places are found.
     """
     try:
         gmaps = googlemaps.Client(key=api_key)
@@ -1140,11 +1143,10 @@ def fetch_places(user, interest_type, api_key):
         # Get location from user
         lat = user.get('location', {}).get('lat')
         lon = user.get('location', {}).get('lon')
-        
         if not lat or not lon:
             logger.warning("Missing user location coordinates")
             return []
-        
+
         # Map interest types to Google Maps place types
         place_type_mapping = {
             'food': 'restaurant',
@@ -1154,30 +1156,47 @@ def fetch_places(user, interest_type, api_key):
             'gaming': 'amusement_park',
             'cooking': 'kitchen'
         }
-        
-        # Get place type from interest
         place_type = place_type_mapping.get(interest_type, 'point_of_interest')
-        
-        # Search for places
+
+        # First attempt: standard nearby search
         if interest_type == "travel":
             places_result = gmaps.places_nearby(
                 location=(lat, lon),
-                radius=20000,
+                radius=50000,
                 type=place_type
             )
         else:
             places_result = gmaps.places_nearby(
                 location=(lat, lon),
-                radius=20000,
+                radius=50000,
                 type=place_type,
                 open_now=True
             )
 
-        
-        return places_result.get('results', [])
+        places = places_result.get('results', [])
+        if places:
+            logger.info(f"[Places API] Found {len(places)} results for interest '{interest_type}'")
+            return places
+
+        # Fallback for travel: keyword search
+        if interest_type == "travel":
+            user_city = user.get("location", {}).get("city", "")
+            fallback_result = gmaps.places(
+                query=f"top tourist attractions in {user_city}",
+                location=(lat, lon),
+                radius=20000
+            )
+            fallback_places = fallback_result.get('results', [])
+            logger.warning(f"[Fallback] No results from places_nearby for 'travel'. "
+                           f"Used keyword search and got {len(fallback_places)} results.")
+            return fallback_places
+
+        return []
+
     except Exception as e:
         logger.error(f"Error fetching places: {str(e)}")
         return []
+
 
 def build_personalized_context(user, top_interest):
     """
