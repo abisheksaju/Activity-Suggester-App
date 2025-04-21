@@ -742,6 +742,7 @@ def render_quick_glance_view():
            # If the plan says this should be an indoor activity
            if planned_activity_type == "indoor":
                # Generate indoor activity based on the planned interest
+               slot_context = f"You have {slot['duration_hours']} hours available on {slot['day']} from {slot['start_time']} to {slot['end_time']}."
                prompt = build_llm_prompt_indoor(user, top_interest,user_feedback=slot_context)
                slot_context = f"You have {slot['duration_hours']} hours available on {slot['day']} from {slot['start_time']} to {slot['end_time']}."
                prompt = prompt.replace("My context:", f"My context:\n- {slot_context}\n-")
