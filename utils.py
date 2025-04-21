@@ -26,6 +26,8 @@ import pytz
 from typing import List, Dict, Optional
 import webbrowser
 from urllib.parse import quote, urlencode
+from urllib.parse import urlparse
+import pyshorteners
 
 # Make sure to set OPENAI_API_KEY in your environment or replace here.
 #openai.api_key = os.getenv("OPENAI_API_KEY", "your-default-api-key")
@@ -399,6 +401,7 @@ def fetch_and_store_events(interest=None, city=None, country_code=None, location
             continue
 
         try:
+            print(f"🔄 Trying API: {api_name}")
             if api_name == "ticketmaster":
                 events = fetch_ticketmaster_events(
                     api_key=api_key,
@@ -406,13 +409,20 @@ def fetch_and_store_events(interest=None, city=None, country_code=None, location
                     country_code=country_code,
                     **common_params
                 )
+
+                print(f"📊 Ticketmaster response: {events is not None}, has events: {bool(events and events.get('_embedded', {}).get('events'))}")
                 if events and events.get("_embedded", {}).get("events"):
                     formatted_events = [
                         format_event(e, "ticketmaster")
                         for e in events["_embedded"]["events"]
                     ]
+
+                    print(f"✅ Found {len(formatted_events)} events from Ticketmaster")
                     event_storage.add_events(formatted_events)
                     return True
+
+                else:
+                    print("❌ No events found in Ticketmaster response")
 
             elif api_name == "eventbrite":
                 events = fetch_eventbrite_events(
@@ -503,19 +513,20 @@ def get_synthetic_user():
     user_data = {
         "user_id": "us001",
         "location": {
-            "city": "Bangalore",
-            "lat": 12.9716,
-            "lon": 77.5946
+            "city": "New York",
+            "lat": 37.7749,
+            "lon": 122.4194
         },
-        "weather": "Sunny",
-        "current_time": "Tuesday 4 PM",
+        "weather": "Clear",
+        "current_time": "Tuesday 3 PM",
         #"free_hours": 4,
         "calendar": [
             {"event": "Lunch with friend", "start": "1 PM", "end": "2 PM"},
-            {"event": "Office Meeting", "start": "6 PM", "end": "7 PM"}
+            {"event": "Office Meeting", "start": "8 PM", "end": "9 PM"}
         ],
         "interests": {
-            "travel": 0.91,
+            "event": 0.81,
+            "travel": 0.98,
             "food": 0.18,
             "news": 0.15,
             "shopping": 0.13,
@@ -1080,7 +1091,7 @@ def build_llm_decision_prompt(user, top_interest):
     
     prompt = f"""
     Based on this context, decide if I should suggest an indoor or outdoor activity.
-    Just respond with "indoor" or "outdoor".
+    !Just respond with "indoor" or "outdoor"!
     
     User context:
     - Current weather: {weather}
@@ -1092,7 +1103,8 @@ def build_llm_decision_prompt(user, top_interest):
     Consider:
     - If it's late evening, raining, or very hot, indoor might be better
     - If it's morning or daytime with good weather, outdoor might be better
-    - Also consider the interest - some activities like gaming are typically indoor
+    - Also consider the interest - some activities like gaming are typically indoor, but events and travel are typically outdoor
+    - If weather is "Clear" or "Sunny", strongly prefer outdoor activities
     - Also consider the location of the user
     """
     return prompt.strip()
@@ -1308,13 +1320,14 @@ def get_user_preferences_db():
     if "user_preferences" not in st.session_state:
         st.session_state.user_preferences = {
             "category_preferences": {
-                "food": 0.5,
-                "travel": 0.9,
-                "shopping": 0.5,
-                "gaming": 0.5,
-                "news": 0.5,
-                "fitness": 0.7,
-                "cooking": 0.5
+                "food": 0.2,
+                "travel": 0.2,
+                "event": 0.9,
+                "shopping": 0.3,
+                "gaming": 0.3,
+                "news": 0.2,
+                "fitness": 0.3,
+                "cooking": 0.2
             },
             "liked_places": [],
             "disliked_places": []
@@ -1709,7 +1722,7 @@ def open_booking_platform(platform, url):
     return {"status": "success", "platform": platform, "url": url}
 
 def show_booking_options(recommendation):
-    """Display booking dropdown with comprehensive error handling"""
+    """Enhanced booking options display with all features"""
     try:
         # Validate recommendation structure
         if not recommendation or not isinstance(recommendation, dict):
@@ -1741,49 +1754,118 @@ def show_booking_options(recommendation):
             st.warning("No booking options available - date error")
             return
 
-        # Generate URLs
-        try:
-            booking_urls = generate_booking_urls(
-                location=place_address,
-                check_in=saturday,
-                check_out=sunday,
-                guests=2,
-                rooms=1
-            )
+        # Show loading state while generating URLs
+        with st.spinner("Loading booking options..."):
+            # Generate URLs
+            try:
+                booking_urls = generate_booking_urls(
+                    location=place_address,
+                    check_in=saturday,
+                    check_out=sunday,
+                    guests=2,
+                    rooms=1
+                )
 
-            if not booking_urls:
-                st.warning("No booking options available")
+                if not booking_urls:
+                    st.warning("No booking options available")
+                    return
+
+            except Exception:
+                st.warning("No booking options available - service error")
                 return
-
-        except Exception:
-            st.warning("No booking options available - service error")
-            return
 
         # Display UI
         st.markdown("---")
         st.subheader("🏨 Need accommodation?")
 
-        col1, col2 = st.columns([3, 2])
+        selected_platform = st.selectbox(
+            "Choose a booking site:",
+            options=[""] + list(booking_urls.keys()),
+            format_func=lambda x: "Select a platform" if x == "" else x.capitalize(),
+            key=f"platform_select_{recommendation.get('name', '')}"
+        )
 
-        with col1:
-            selected_platform = st.selectbox(
-                "Choose a booking site:",
-                options=[""] + list(booking_urls.keys()),
-                format_func=lambda x: "Select a platform" if x == "" else x.capitalize(),
-                key=f"platform_select_{recommendation.get('name', '')}"
+        if selected_platform:
+            platform_name = selected_platform.capitalize()
+            url = booking_urls[selected_platform]
+
+            # Validate URL
+            if not is_valid_url(url):
+                st.error(f"Invalid booking URL for {platform_name}")
+                return
+
+            # Shorten URL for display (keeps original for redirect)
+            display_url = shorten_url(url)
+
+            # Mobile-friendly booking button with tracking
+            st.markdown(
+                f"""
+                <div style="width:100%; margin:10px 0">
+                    <a href="{url}" target="_blank"
+                       onclick="console.log('Booking click: {platform_name}');"
+                       style="display:block; width:100%; text-decoration:none">
+                        <button style="
+                            width:100%;
+                            background-color:#FF5A5F;
+                            color:white;
+                            border:none;
+                            padding:12px 24px;
+                            text-align:center;
+                            font-size:16px;
+                            cursor:pointer;
+                            border-radius:4px;
+                            font-weight:bold;
+                        ">
+                            🏨 Book on {platform_name}
+                        </button>
+                    </a>
+                    <small style="color:#666; display:block; text-align:center; margin-top:4px">
+                        {display_url}
+                    </small>
+                </div>
+                """,
+                unsafe_allow_html=True
             )
 
-        with col2:
-            if selected_platform:
-                platform_name = selected_platform.capitalize()
-                if st.button(f"Book on {platform_name}"):
-                    open_booking_platform(selected_platform, booking_urls[selected_platform])
-            else:
-                st.button("Select platform first", disabled=True)
+            # Track the click (server-side)
+            track_booking_click(platform_name, url)
+
+            # For local development
+            if os.environ.get("STREAMLIT_LOCAL_DEVELOPMENT"):
+                open_booking_platform(selected_platform, url)
 
     except Exception as e:
         st.error("Failed to load booking options")
-        print(f"Booking error: {str(e)}")  # Log full error for debugging
+        print(f"Booking error: {str(e)}"
+
+#Function to shorten the url
+def shorten_url(url):
+    """Shorten long booking URLs for cleaner display"""
+    try:
+        if len(url) > 50:  # Only shorten if URL is long
+            return pyshorteners.Shortener().tinyurl.short(url)
+        return url
+    except Exception as e:
+        print(f"URL shortening failed: {e}")
+        return url
+
+# Function to track booking click
+def track_booking_click(platform, url):
+    """Log booking platform clicks"""
+    try:
+        # Basic print logging (replace with your analytics service)
+        print(f"📊 Booking click tracked - Platform: {platform} | URL: {url[:100]}...")
+
+        # Example: Add to session state for analytics
+        if 'booking_clicks' not in st.session_state:
+            st.session_state.booking_clicks = []
+        st.session_state.booking_clicks.append({
+            'platform': platform,
+            'time': datetime.now().isoformat(),
+            'url_hash': hash(url)  # Store hash for privacy
+        })
+    except Exception as e:
+        print(f"Tracking error: {e}")
 
 # Enhanced version of choose_place with better error handling
 @safe_api_call
@@ -1908,6 +1990,174 @@ Mention only one place by name.
         logger.error(f"Error in choose_place: {str(e)}")
         logger.error(traceback.format_exc())
         return None, "We encountered an unexpected error. Let's suggest an indoor activity instead."
+
+
+@safe_api_call
+def choose_event(user, events, model, user_feedback=None):
+    """
+    Choose the best event from options based on user context and preferences.
+    
+    Args:
+        user (dict): User context data
+        events (list): List of event objects to choose from
+        model: The LLM model to use for selection
+        user_feedback (str, optional): Any previous user feedback to incorporate
+        
+    Returns:
+        tuple: (selected_event, description) - The chosen event and LLM description
+    """
+    if not events:
+        logger.warning("No events found to choose from")
+        return None, "We couldn't find any interesting events nearby. Let's suggest something else instead."
+
+    try:
+        if "rejected_event_ids" not in st.session_state:
+            st.session_state.rejected_event_ids = []
+            
+        # Get suggestion history
+        history = get_suggestion_history()
+        previous_events = [item for item in history.get("indoor", []) + history.get("outdoor", []) 
+                          if "event" in item.lower()]
+
+        # Filter out previously rejected and suggested events
+        filtered_events = [
+            event for event in events 
+            if event.get("id") not in st.session_state.rejected_event_ids
+        ]
+        
+        if not filtered_events:
+            # If we've exhausted all options, allow reusing events but mention it
+            logger.warning("All events have been seen before, allowing repeats")
+            filtered_events = [
+                event for event in events 
+                if event.get("id") not in st.session_state.rejected_event_ids
+            ]
+            
+            if not filtered_events:
+                return None, "You've seen all available events. Let's suggest something different instead."
+
+        # Use only the first 5 events to keep the prompt manageable
+        filtered_events = filtered_events[:5]
+        top_interest = st.session_state.get("top_interest", "event")
+        personalized_context = build_personalized_context(user, top_interest)
+
+        # Construct LLM prompt
+        feedback_note = user_feedback + " " if user_feedback else ""
+        prompt = f"""
+{feedback_note}You're a smart assistant helping a user decide which is the best event to attend.
+
+User preferences:
+- Weather: {user.get("weather", "Unknown")}
+- Time: {user.get("current_time", "Unknown")}
+- Top interest: {top_interest}
+- Free hours: {user.get("free_hours", "Unknown")}
+
+User History and Preferences:
+{personalized_context}
+
+"""
+        # Add information about previous suggestions if any
+        if previous_events:
+            prompt += "\nI want to suggest a NEW event the user hasn't seen before.\n"
+        
+        prompt += "Here are some events happening nearby:\n"
+
+        for i, event in enumerate(filtered_events, 1):
+            prompt += f"\n{i}. {event.get('title', 'Unnamed event')} - "
+            
+            # Add date and time if available
+            if event.get('date'):
+                prompt += f"On {event.get('date')} "
+                if event.get('time'):
+                    prompt += f"at {event.get('time')} "
+            
+            # Add location if available
+            if event.get('location'):
+                prompt += f"at {event.get('location')}. "
+            
+            # Add venue if available and different from location
+            if event.get('venue') and event.get('venue') != event.get('location'):
+                prompt += f"Venue: {event.get('venue')}. "
+
+        prompt += """
+❗ Choose only one event. Do not list or compare options. 
+Make your response in 1–2 short, fun, personal sentences that could show up on a phone lockscreen.
+Mention only one event by name.
+"""
+
+        response = model.generate_content(prompt)
+        description = response.text.strip()
+
+        # Extract the name of the event mentioned from the response
+        selected_event = filtered_events[0]  # Default fallback
+
+        for event in filtered_events:
+            event_title = event.get("title", "").lower()
+            if event_title and event_title in description.lower():
+                selected_event = event
+                break
+
+        return selected_event, description
+
+    except LLMError as e:
+        logger.error(f"LLM Error in choose_event: {str(e)}")
+        return None, "Sorry, we had an issue generating personalized event recommendations."
+    except Exception as e:
+        logger.error(f"Error in choose_event: {str(e)}")
+        logger.error(traceback.format_exc())
+        return None, "We encountered an unexpected error with event recommendations."
+
+def is_valid_url(url):
+    """Check if a URL is properly formatted"""
+    try:
+        result = urlparse(url)
+        return all([result.scheme in ('http', 'https'), result.netloc])
+    except:
+        return False
+
+def get_multiple_events(count=5):
+    """
+    Retrieves multiple events from storage.
+    
+    Args:
+        count (int): Number of events to retrieve
+        
+    Returns:
+        list: A list of event objects
+    """
+    global event_storage
+    events = []
+    
+    # Save current index to restore it later
+    original_index = event_storage.current_index
+    
+    # Check how many events are available
+    available = 0
+    temp_index = event_storage.current_index
+    while temp_index < len(event_storage.events):
+        available += 1
+        temp_index += 1
+    
+    # Retrieve up to count events
+    fetch_count = min(count, available)
+    for _ in range(fetch_count):
+        event = event_storage.get_next_event()
+        if event:
+            events.append(event)
+    
+    # Restore original index (so we don't actually consume these events yet)
+    event_storage.current_index = original_index
+    
+    return events
+
+
+def mark_event_rejected(event_id):
+    """Mark an event as rejected to avoid showing it again"""
+    if event_id and "rejected_event_ids" in st.session_state:
+        st.session_state.rejected_event_ids.add(event_id)
+
+
+
 
 
 class AstraManager:
