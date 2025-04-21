@@ -870,11 +870,11 @@ def render_quick_glance_view():
    
     # Display all slots in a grid
     num_cols = 2  # Display 2 slots per row
-    
+
     # Group slots by day
     saturday_slots = [slot for slot in st.session_state.weekend_slots if slot["day"] == "Saturday"]
     sunday_slots = [slot for slot in st.session_state.weekend_slots if slot["day"] == "Sunday"]
-    
+
     # Display Saturday slots
     if saturday_slots:
        st.subheader("Saturday")
@@ -926,7 +926,7 @@ def render_quick_glance_view():
                            st.session_state.selected_slot_id = slot_id
                            st.session_state.current_view = "slot"
                            st.rerun()
-    
+
     # Display Sunday slots
     if sunday_slots:
        st.subheader("Sunday")
