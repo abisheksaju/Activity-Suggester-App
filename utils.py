@@ -515,8 +515,8 @@ def get_synthetic_user():
         "user_id": "us001",
         "location": {
             "city": "New York",
-            "lat": 41.8781,
-            "lon": 87.6298
+            "lat": 40.7128,
+            "lon": 74.0060
         },
         "weather": "Clear",
         "current_time": "Saturday 7 AM",
