@@ -21,3 +21,4 @@ cassandra-driver
 astrapy
 langchain-astradb
 beautifulsoup4
+pyshorteners==1.0.1

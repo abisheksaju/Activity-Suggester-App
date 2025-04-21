@@ -64,6 +64,12 @@ from utils import (
 )
 from utils import astra_manager
 
+from utils import(
+    is_valid_url,
+    shorten_url,
+    track_booking_click,
+)
+
 def add_debug_log(message):
     if "debug_logs" not in st.session_state:
         st.session_state.debug_logs = []
