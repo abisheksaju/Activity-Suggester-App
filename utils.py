@@ -518,12 +518,12 @@ def get_synthetic_user():
         "gender": "man",
         "age_group" : "20-30",
         "location": {
-            "city": "Chicago",
-            "lat": 41.8781,
-            "lon": 87.6298
+            "city": "New York",
+            "lat":  40.7128,
+            "lon": -74.0060
         },
         "weather": "Clear",
-        "current_time": "Tuesday 3 PM",
+        "current_time": "Saturday 7 AM",
         #"free_hours": 4,
         "calendar": [
             {"event": "Lunch with friend", "start": "1 PM", "end": "2 PM"},
@@ -1345,6 +1345,14 @@ def get_detailed_suggestion(user, model, short_description, interest_type, recom
         logging.error(f"Error getting detailed suggestion: {str(e)}")
         return "I'm sorry, I couldn't generate additional details right now.", ""
 
+
+def safe_text(text: str) -> str:
+    """Remove or ignore problematic Unicode characters for safe rendering."""
+    if not isinstance(text, str):
+        return ""
+    return text.encode("utf-8", "ignore").decode("utf-8", "ignore")
+
+
 # User preferences functions
 def get_user_preferences_db():
     """
@@ -1355,9 +1363,9 @@ def get_user_preferences_db():
             "category_preferences": {
                 "food": 0.2,
                 "travel": 0.9,
-                "event": 0.4,
+                "event": 0.8,
                 "music": 0.7,
-                "gaming": 0.3,
+                "gaming": 0.2,
                 "news": 0.2,
                 "fitness": 0.3,
                 "cooking": 0.2
@@ -2099,7 +2107,8 @@ def mark_event_rejected(event_id):
 def plan_diverse_activities(weekend_slots: List[Dict], user: Dict):
     """
     Creates a holistic plan for diverse activities across all weekend slots,
-    ensuring at least 50% outdoor activities and biasing toward top user interests.
+    ensuring 70% outdoor activities and 30% indoor activities,
+    focusing exclusively on the user's top 3 interests.
 
     Args:
         weekend_slots (list): List of all weekend time slots
@@ -2119,19 +2128,24 @@ def plan_diverse_activities(weekend_slots: List[Dict], user: Dict):
     all_slots = saturday_slots + sunday_slots
 
     total_slots = len(all_slots)
-    min_outdoors = ceil(total_slots * 0.5)
+    # Change to 70% outdoor, 30% indoor
+    min_outdoors = ceil(total_slots * 0.7)  # Changed from 0.5 to 0.7
     min_indoors = total_slots - min_outdoors
 
     activity_types = ["outdoor"] * min_outdoors + ["indoor"] * min_indoors
     random.shuffle(activity_types)
 
-    # Sort interests and bias top 3
+    # Get ONLY top 3 interests, ignore others
     interests = user.get("interests", {})
     sorted_interests = sorted(interests.items(), key=lambda x: x[1], reverse=True)
-    biased_interest_pool = (
-        [interest for interest, _ in sorted_interests[:3]] * 2 +
-        [interest for interest, _ in sorted_interests[3:]]
-    )
+    top_3_interests = [interest for interest, _ in sorted_interests[:3]]
+    
+    # Only use top 3 interests, with extra weight for the #1 interest
+    biased_interest_pool = [top_3_interests[0]] * 3  # Top interest gets more weight
+    if len(top_3_interests) > 1:
+        biased_interest_pool += [top_3_interests[1]] * 2  # Second gets medium weight
+    if len(top_3_interests) > 2:
+        biased_interest_pool += [top_3_interests[2]]  # Third gets normal weight
 
     # Assign activity types and time periods
     for i, slot in enumerate(all_slots):
@@ -2150,7 +2164,10 @@ def plan_diverse_activities(weekend_slots: List[Dict], user: Dict):
 
         # Use shuffled, pre-balanced list
         activity_type = activity_types[i]
-        activity_type = adjust_activity_type_for_time(activity_type, time_period)
+        # Minimize time-based adjustments to preserve the 70/30 ratio
+        # Only adjust in extreme cases (e.g., outdoor at very late night)
+        if time_period == "evening" and activity_type == "outdoor" and random.random() < 0.3:
+            activity_type = "indoor"
 
         diversity_plan[slot_id] = {
             "activity_type": activity_type,
@@ -2158,20 +2175,35 @@ def plan_diverse_activities(weekend_slots: List[Dict], user: Dict):
             "is_booked": False
         }
 
-    # Assign interests with bias toward top-ranked ones
+    # Assign interests from top 3 only
     used_interests = {}
     for slot_id in diversity_plan:
         if diversity_plan[slot_id].get("is_booked", False):
             continue
 
-        available_interests = [i for i in biased_interest_pool if used_interests.get(i, 0) < 2]
-        selected_interest = random.choice(available_interests) if available_interests else random.choice(biased_interest_pool)
+        # Make sure interest selection matches with activity type when possible
+        activity_type = diversity_plan[slot_id]["activity_type"]
+        
+        # For outdoor, favor travel-related interests if available
+        # For outdoor, favor travel-related interests if available
+        if activity_type == "outdoor":
+            if "event" in top_3_interests and random.random() < 0.5:  # Give "event" a 50% chance when present
+                selected_interest = "event"
+            elif "travel" in top_3_interests:
+                selected_interest = "travel"
+            elif "music" in top_3_interests:
+                selected_interest = "music"
+            else:
+                # Otherwise select from our biased pool of top 3
+                selected_interest = random.choice(biased_interest_pool)
+        else:
+            # Handle non-outdoor activities
+            selected_interest = random.choice(biased_interest_pool)
 
         diversity_plan[slot_id]["interest"] = selected_interest
         used_interests[selected_interest] = used_interests.get(selected_interest, 0) + 1
 
     return diversity_plan
-
 
 
 
