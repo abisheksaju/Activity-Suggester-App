@@ -2088,48 +2088,54 @@ def mark_event_rejected(event_id):
 
 
 
-def plan_diverse_activities(weekend_slots):
+def plan_diverse_activities(weekend_slots: List[Dict], user: Dict):
     """
-    Creates a holistic plan for diverse activities across all weekend slots.
-    
+    Creates a holistic plan for diverse activities across all weekend slots,
+    with a bias toward top user interests.
+
     Args:
         weekend_slots (list): List of all weekend time slots
-        
+        user (dict): The user object with interest scores
+
     Returns:
         dict: A diversity plan with assigned activity types and interests for each slot
     """
     # Initialize diversity plan
     diversity_plan = {}
-    
+
     # Get existing booked slots to respect user choices
     booked_slots = st.session_state.get("booked_slots", {})
-    
+
     # Prepare slots by day and time period
     saturday_slots = [s for s in weekend_slots if "saturday" in s["day"].lower()]
     sunday_slots = [s for s in weekend_slots if "sunday" in s["day"].lower()]
-    
+
     # Sort slots by start time
     saturday_slots.sort(key=lambda x: parse_time_to_minutes(x["start_time"]))
     sunday_slots.sort(key=lambda x: parse_time_to_minutes(x["start_time"]))
-    
-    # Allocate core activity types across weekend using a balanced approach
-    # We want a mix of indoor, outdoor, and events
+
     all_slots = saturday_slots + sunday_slots
-    
-    # Start with initial allocation
+
+    # Initial balanced activity types
     activity_types = ["indoor", "outdoor", "event"] * (len(all_slots) // 3 + 1)
     activity_types = activity_types[:len(all_slots)]
-    
-    # Shuffle to avoid predictable patterns while maintaining balance
     random.shuffle(activity_types)
-    
-    # Map slots to time periods
+
+    # Build a biased pool of interests: repeat top interests more
+    interests = user.get("interests", {})
+    sorted_interests = sorted(interests.items(), key=lambda x: x[1], reverse=True)
+
+    # Top 3 interests are duplicated to increase their chance of being picked
+    biased_interest_pool = (
+        [interest for interest, _ in sorted_interests[:3]] * 2 +
+        [interest for interest, _ in sorted_interests[3:]]
+    )
+
+    # Map each slot to an activity type and time
     for i, slot in enumerate(all_slots):
         slot_id = slot["id"]
-        
-        # Skip already booked slots
+
         if slot_id in booked_slots:
-            # Respect the user's choice but still track for diversity
             booked_activity = booked_slots[slot_id]
             diversity_plan[slot_id] = {
                 "activity_type": booked_activity.get("type", "indoor"),
@@ -2137,20 +2143,16 @@ def plan_diverse_activities(weekend_slots):
                 "is_booked": True
             }
             continue
-        
-        # Determine time period
+
         time_period = determine_time_period(slot["start_time"])
-        
-        # Get appropriate activity type for this slot
-        # If we're on the last few slots, ensure balance
+
+        # Ensure type diversity for last few slots
         if i >= len(all_slots) - 3:
-            # Count types so far
             type_counts = {}
             for s_id, plan in diversity_plan.items():
                 a_type = plan.get("activity_type")
                 type_counts[a_type] = type_counts.get(a_type, 0) + 1
-            
-            # Find underrepresented type
+
             if type_counts.get("indoor", 0) <= type_counts.get("outdoor", 0) and type_counts.get("indoor", 0) <= type_counts.get("event", 0):
                 activity_type = "indoor"
             elif type_counts.get("outdoor", 0) <= type_counts.get("event", 0):
@@ -2158,37 +2160,30 @@ def plan_diverse_activities(weekend_slots):
             else:
                 activity_type = "event"
         else:
-            # Use pre-shuffled, balanced list
             activity_type = activity_types[i]
-            
-            # Adjust type based on time appropriateness
             activity_type = adjust_activity_type_for_time(activity_type, time_period)
-        
-        # Select a diverse interest for this slot (will be done separately)
+
         diversity_plan[slot_id] = {
             "activity_type": activity_type,
             "time_period": time_period,
             "is_booked": False
         }
-    
-    # Now select diverse interests for the slots
+
+    # Assign interests with bias toward top-ranked ones
     used_interests = {}
     for slot_id in diversity_plan:
         if diversity_plan[slot_id].get("is_booked", False):
-            # Skip booked slots for interest selection
             continue
-            
-        # Select diverse interest for this activity type and time period
-        selected_interest = select_diverse_interest(used_interests, 
-                                                   diversity_plan[slot_id]["activity_type"],
-                                                   diversity_plan[slot_id]["time_period"])
-        
+
+        # Bias the selection toward top interests, while keeping some diversity
+        available_interests = [i for i in biased_interest_pool if used_interests.get(i, 0) < 2]
+        selected_interest = random.choice(available_interests) if available_interests else random.choice(biased_interest_pool)
+
         diversity_plan[slot_id]["interest"] = selected_interest
-        
-        # Track that we've used this interest
         used_interests[selected_interest] = used_interests.get(selected_interest, 0) + 1
-    
+
     return diversity_plan
+
 
 
 def determine_time_period(time_str):
