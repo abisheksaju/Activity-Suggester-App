@@ -1836,7 +1836,7 @@ def show_booking_options(recommendation):
 
     except Exception as e:
         st.error("Failed to load booking options")
-        print(f"Booking error: {str(e)}"
+        print(f"Booking error: {str(e)}")
 
 #Function to shorten the url
 def shorten_url(url):
