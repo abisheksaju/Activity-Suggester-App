@@ -52,6 +52,9 @@ from utils import (
     generate_expedia_url,
     generate_hotels_com_url,
     open_booking_platform,
+    track_booking_click,
+    shorten_url,
+    is_valid_url,
     mark_event_rejected,
     get_multiple_events,
     choose_event,
@@ -374,7 +377,10 @@ def render_main_view():
             """, unsafe_allow_html=True)
         elif maps_html:
             st.markdown(maps_html, unsafe_allow_html=True)
-            show_booking_options(recommendation)
+            with st.spinner("🔄 Loading accommodation options..."):
+                show_booking_options(recommendation)
+                # Optional: Add a small delay for better UX
+                time.sleep(0.5)  # Add import at top: import time
 
     if st.button("📌 Book this slot"):
         if st.session_state.weekend_slots and len(st.session_state.weekend_slots) > 0:
@@ -650,7 +656,11 @@ def render_slot_recommendation(slot_id):
                 st.markdown(ticket_html, unsafe_allow_html=True)
             elif maps_html:
                 st.markdown(maps_html, unsafe_allow_html=True)
-                show_booking_options(recommendation)
+                with st.spinner("🔄 Loading accommodation options..."):
+                    show_booking_options(recommendation)
+
+                    # Optional: Add a small delay for better UX
+                    time.sleep(0.5)  # Add import at top: import time
 
         if st.button("\ud83d\udccc Book this slot", key=f"book_slot_{slot_id}"):
             st.session_state.booked_slots[slot_id] = recommendation

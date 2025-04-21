@@ -26,6 +26,8 @@ import pytz
 from typing import List, Dict, Optional
 import webbrowser
 from urllib.parse import quote, urlencode
+from urllib.parse import urlparse
+import pyshorteners
 
 # Make sure to set OPENAI_API_KEY in your environment or replace here.
 #openai.api_key = os.getenv("OPENAI_API_KEY", "your-default-api-key")
@@ -1720,7 +1722,7 @@ def open_booking_platform(platform, url):
     return {"status": "success", "platform": platform, "url": url}
 
 def show_booking_options(recommendation):
-    """Display booking dropdown with comprehensive error handling"""
+    """Enhanced booking options display with all features"""
     try:
         # Validate recommendation structure
         if not recommendation or not isinstance(recommendation, dict):
@@ -1752,49 +1754,118 @@ def show_booking_options(recommendation):
             st.warning("No booking options available - date error")
             return
 
-        # Generate URLs
-        try:
-            booking_urls = generate_booking_urls(
-                location=place_address,
-                check_in=saturday,
-                check_out=sunday,
-                guests=2,
-                rooms=1
-            )
+        # Show loading state while generating URLs
+        with st.spinner("Loading booking options..."):
+            # Generate URLs
+            try:
+                booking_urls = generate_booking_urls(
+                    location=place_address,
+                    check_in=saturday,
+                    check_out=sunday,
+                    guests=2,
+                    rooms=1
+                )
 
-            if not booking_urls:
-                st.warning("No booking options available")
+                if not booking_urls:
+                    st.warning("No booking options available")
+                    return
+
+            except Exception:
+                st.warning("No booking options available - service error")
                 return
-
-        except Exception:
-            st.warning("No booking options available - service error")
-            return
 
         # Display UI
         st.markdown("---")
         st.subheader("🏨 Need accommodation?")
 
-        col1, col2 = st.columns([3, 2])
+        selected_platform = st.selectbox(
+            "Choose a booking site:",
+            options=[""] + list(booking_urls.keys()),
+            format_func=lambda x: "Select a platform" if x == "" else x.capitalize(),
+            key=f"platform_select_{recommendation.get('name', '')}"
+        )
 
-        with col1:
-            selected_platform = st.selectbox(
-                "Choose a booking site:",
-                options=[""] + list(booking_urls.keys()),
-                format_func=lambda x: "Select a platform" if x == "" else x.capitalize(),
-                key=f"platform_select_{recommendation.get('name', '')}"
+        if selected_platform:
+            platform_name = selected_platform.capitalize()
+            url = booking_urls[selected_platform]
+
+            # Validate URL
+            if not is_valid_url(url):
+                st.error(f"Invalid booking URL for {platform_name}")
+                return
+
+            # Shorten URL for display (keeps original for redirect)
+            display_url = shorten_url(url)
+
+            # Mobile-friendly booking button with tracking
+            st.markdown(
+                f"""
+                <div style="width:100%; margin:10px 0">
+                    <a href="{url}" target="_blank"
+                       onclick="console.log('Booking click: {platform_name}');"
+                       style="display:block; width:100%; text-decoration:none">
+                        <button style="
+                            width:100%;
+                            background-color:#FF5A5F;
+                            color:white;
+                            border:none;
+                            padding:12px 24px;
+                            text-align:center;
+                            font-size:16px;
+                            cursor:pointer;
+                            border-radius:4px;
+                            font-weight:bold;
+                        ">
+                            🏨 Book on {platform_name}
+                        </button>
+                    </a>
+                    <small style="color:#666; display:block; text-align:center; margin-top:4px">
+                        {display_url}
+                    </small>
+                </div>
+                """,
+                unsafe_allow_html=True
             )
 
-        with col2:
-            if selected_platform:
-                platform_name = selected_platform.capitalize()
-                if st.button(f"Book on {platform_name}"):
-                    open_booking_platform(selected_platform, booking_urls[selected_platform])
-            else:
-                st.button("Select platform first", disabled=True)
+            # Track the click (server-side)
+            track_booking_click(platform_name, url)
+
+            # For local development
+            if os.environ.get("STREAMLIT_LOCAL_DEVELOPMENT"):
+                open_booking_platform(selected_platform, url)
 
     except Exception as e:
         st.error("Failed to load booking options")
-        print(f"Booking error: {str(e)}")  # Log full error for debugging
+        print(f"Booking error: {str(e)}"
+
+#Function to shorten the url
+def shorten_url(url):
+    """Shorten long booking URLs for cleaner display"""
+    try:
+        if len(url) > 50:  # Only shorten if URL is long
+            return pyshorteners.Shortener().tinyurl.short(url)
+        return url
+    except Exception as e:
+        print(f"URL shortening failed: {e}")
+        return url
+
+# Function to track booking click
+def track_booking_click(platform, url):
+    """Log booking platform clicks"""
+    try:
+        # Basic print logging (replace with your analytics service)
+        print(f"📊 Booking click tracked - Platform: {platform} | URL: {url[:100]}...")
+
+        # Example: Add to session state for analytics
+        if 'booking_clicks' not in st.session_state:
+            st.session_state.booking_clicks = []
+        st.session_state.booking_clicks.append({
+            'platform': platform,
+            'time': datetime.now().isoformat(),
+            'url_hash': hash(url)  # Store hash for privacy
+        })
+    except Exception as e:
+        print(f"Tracking error: {e}")
 
 # Enhanced version of choose_place with better error handling
 @safe_api_call
@@ -2036,7 +2107,13 @@ Mention only one event by name.
         logger.error(traceback.format_exc())
         return None, "We encountered an unexpected error with event recommendations."
 
-
+def is_valid_url(url):
+    """Check if a URL is properly formatted"""
+    try:
+        result = urlparse(url)
+        return all([result.scheme in ('http', 'https'), result.netloc])
+    except:
+        return False
 
 def get_multiple_events(count=5):
     """
