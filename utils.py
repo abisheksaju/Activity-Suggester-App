@@ -27,6 +27,8 @@ from typing import List, Dict, Optional
 import webbrowser
 from urllib.parse import quote, urlencode
 from math import ceil
+from urllib.parse import urlparse
+import pyshorteners
 
 # Make sure to set OPENAI_API_KEY in your environment or replace here.
 #openai.api_key = os.getenv("OPENAI_API_KEY", "your-default-api-key")
@@ -2444,7 +2446,145 @@ class AstraManager:
 
 #astra initializing
 astra_manager = AstraManager(token=os.environ.get("ASTRA_TOKEN"),api_endpoint=os.environ.get("ASTRA_API_ENDPOINT"))
-                
-                
+
+
+def is_valid_url(url):
+    """Check if a URL is properly formatted"""
+    try:
+        result = urlparse(url)
+        return all([result.scheme in ('http', 'https'), result.netloc])
+    except:
+        return False
+
+def shorten_url(url):
+    """Shorten long booking URLs for cleaner display"""
+    try:
+        return pyshorteners.Shortener().tinyurl.short(url)
+    except:
+        return url  # Fallback to original if shortening fails
+
+def track_booking_click(platform, url):
+    """Log booking clicks for analytics"""
+    # Basic logging (replace with your analytics service)
+    print(f"Booking click tracked: {platform} | {url}")
+    # Example: Mixpanel, Google Analytics, etc.
+    # analytics.track(user_id, "booking_click", {"platform": platform})
+
+def show_booking_options(recommendation):
+    """Enhanced booking options display with all features"""
+    try:
+        # Validate recommendation structure
+        if not recommendation or not isinstance(recommendation, dict):
+            st.warning("No booking options available")
+            return
+
+        # Check if this is a bookable type
+        if recommendation.get("type") not in ["outdoor", "travel"]:
+            return
+
+        # Validate required location data
+        place_data = recommendation.get("place", {})
+        if not place_data or not isinstance(place_data, dict):
+            st.warning("No booking options available - missing location data")
+            return
+
+        place_name = place_data.get("name")
+        place_address = place_data.get("formatted_address", place_name)
+
+        if not place_address:
+            st.warning("No booking options available - address missing")
+            return
+
+        # Generate dates
+        try:
+            today = datetime.now()
+            saturday, sunday = get_upcoming_weekend(today)
+        except Exception:
+            st.warning("No booking options available - date error")
+            return
+
+        # Show loading state while generating URLs
+        with st.spinner("Loading booking options..."):
+            # Generate URLs
+            try:
+                booking_urls = generate_booking_urls(
+                    location=place_address,
+                    check_in=saturday,
+                    check_out=sunday,
+                    guests=2,
+                    rooms=1
+                )
+
+                if not booking_urls:
+                    st.warning("No booking options available")
+                    return
+
+            except Exception:
+                st.warning("No booking options available - service error")
+                return
+
+        # Display UI
+        st.markdown("---")
+        st.subheader("🏨 Need accommodation?")
+
+        selected_platform = st.selectbox(
+            "Choose a booking site:",
+            options=[""] + list(booking_urls.keys()),
+            format_func=lambda x: "Select a platform" if x == "" else x.capitalize(),
+            key=f"platform_select_{recommendation.get('name', '')}"
+        )
+
+        if selected_platform:
+            platform_name = selected_platform.capitalize()
+            url = booking_urls[selected_platform]
+
+            # Validate URL
+            if not is_valid_url(url):
+                st.error(f"Invalid booking URL for {platform_name}")
+                return
+
+            # Shorten URL for display (keeps original for redirect)
+            display_url = shorten_url(url)
+
+            # Mobile-friendly booking button with tracking
+            st.markdown(
+                f"""
+                <div style="width:100%; margin:10px 0">
+                    <a href="{url}" target="_blank"
+                       onclick="console.log('Booking click: {platform_name}');"
+                       style="display:block; width:100%; text-decoration:none">
+                        <button style="
+                            width:100%;
+                            background-color:#FF5A5F;
+                            color:white;
+                            border:none;
+                            padding:12px 24px;
+                            text-align:center;
+                            font-size:16px;
+                            cursor:pointer;
+                            border-radius:4px;
+                            font-weight:bold;
+                        ">
+                            🏨 Book on {platform_name}
+                        </button>
+                    </a>
+                    <small style="color:#666; display:block; text-align:center; margin-top:4px">
+                        {display_url}
+                    </small>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+            # Track the click (server-side)
+            track_booking_click(platform_name, url)
+
+            # For local development
+            if os.environ.get("STREAMLIT_LOCAL_DEVELOPMENT"):
+                open_booking_platform(selected_platform, url)
+
+    except Exception as e:
+        st.error("Failed to load booking options")
+        print(f"Booking error: {str(e)}")
 
 
