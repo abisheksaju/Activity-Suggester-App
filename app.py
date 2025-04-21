@@ -55,6 +55,7 @@ from utils import (
     plan_diverse_activities,
     determine_time_period,
     adjust_activity_type_for_time,
+    safe_text,
     select_diverse_interest,
     balance_activity_types,
     mark_event_rejected,
@@ -322,7 +323,7 @@ def render_main_view():
         st.image(recommendation["image_url"], use_container_width=True)
 
     st.subheader("🔍 Suggested Activity")
-    st.write(recommendation["description"])
+    st.write(safe_text(recommendation["description"]))
 
     success = astra_manager.record_interaction({
         "user_id": user.get("user_id", "unknown"),
@@ -603,7 +604,7 @@ def render_slot_recommendation(slot_id):
         st.image(recommendation["image_url"], use_container_width=True)
 
     st.subheader("Suggested Activity")
-    st.write(recommendation["description"])
+    st.write(safe_text(recommendation["description"]))
 
     success = astra_manager.record_interaction({
         "user_id": user.get("user_id", "unknown"),
