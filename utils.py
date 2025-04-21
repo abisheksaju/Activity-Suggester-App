@@ -1341,6 +1341,14 @@ def get_detailed_suggestion(user, model, short_description, interest_type, recom
         logging.error(f"Error getting detailed suggestion: {str(e)}")
         return "I'm sorry, I couldn't generate additional details right now.", ""
 
+
+def safe_text(text: str) -> str:
+    """Remove or ignore problematic Unicode characters for safe rendering."""
+    if not isinstance(text, str):
+        return ""
+    return text.encode("utf-8", "ignore").decode("utf-8", "ignore")
+
+
 # User preferences functions
 def get_user_preferences_db():
     """
