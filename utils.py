@@ -36,6 +36,8 @@ import pyshorteners
 
 UNSPLASH_ACCESS_KEY = "rVvxvkYuJREpI8wMn9GvJUGhj5bZVlVFBkKMx1QquQA"
 
+OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY")
+
 API_KEYS = {
     "ticketmaster": st.secrets["TICKETMASTER_API_KEY"],
     "eventbrite": st.secrets["EVENTBRITE_API_KEY"],
@@ -513,6 +515,8 @@ def get_synthetic_user():
     # Define the user's base information
     user_data = {
         "user_id": "us001",
+        "gender": "man",
+        "age_group" : "20-30",
         "location": {
             "city": "Chicago",
             "lat": 41.8781,
@@ -2587,4 +2591,208 @@ def show_booking_options(recommendation):
         st.error("Failed to load booking options")
         print(f"Booking error: {str(e)}")
 
+def suggest_best_shopping_platform(user, platforms, openai_client=None, gemini_model=None):
+    """Use AI to recommend the best shopping platform with OpenAI primary and Gemini fallback"""
+    prompt = f"""
+    User Profile:
+    - Location: {user.get('location', {}).get('city', 'Unknown')}
+    - Age Group: {user.get('age_group', 'Unknown')}
+    - Gender: {user.get('gender', 'Unknown')}
+    - Interests: {', '.join([k for k,v in user.get('interests', {}).items() if v > 0.5])}
 
+    Available Platforms: {', '.join(platforms)}
+
+    Task: Recommend the single best shopping platform that would provide:
+    1. Most relevant products for this user
+    2. Best shipping/delivery for their location
+    3. Most age-appropriate experience
+
+    Rules:
+    - Return ONLY the platform name from the available options
+    - Never add explanations or other text
+    - Choose from: {', '.join(platforms)}
+    """
+
+    # Try OpenAI first if available
+    if openai_client:
+        try:
+            response = openai_client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.3
+            )
+            platform = response.choices[0].message.content.strip().lower()
+            if platform in platforms:
+                return platform
+        except Exception as e:
+            logging.warning(f"OpenAI platform selection failed: {str(e)}")
+
+    # Fallback to Gemini
+    if gemini_model:
+        try:
+            response = gemini_model.generate_content(prompt)
+            platform = response.text.strip().lower()
+            if platform in platforms:
+                return platform
+        except Exception as e:
+            logging.warning(f"Gemini platform selection failed: {str(e)}")
+
+    return None  # Complete fallback
+
+def get_shopping_platforms():
+    """Return available shopping platforms with their generators"""
+    return {
+        'amazon': generate_amazon_url,
+        'flipkart': generate_flipkart_url,
+        'myntra': generate_myntra_url,
+        'alibaba': generate_alibaba_url
+    }
+
+def open_shopping_site(platform, search_term=None, **filters):
+    generators = {
+        'amazon': generate_amazon_url,
+        'flipkart': generate_flipkart_url,
+        'myntra': generate_myntra_url,
+        'alibaba': generate_alibaba_url
+    }
+    url = generators[platform.lower()](search_term, **filters)
+    webbrowser.open(url)
+
+def generate_myntra_url(search_term=None, gender=None, age_group=None):
+    base_url = "https://www.myntra.com"
+    if not any([search_term, gender, age_group]):
+        return base_url
+    path = []
+    if gender:
+        path.append(gender.lower())  # 'men', 'women', 'boys', 'girls'
+    if age_group:  # '0-2-years', '3-6-years'
+        path.append(age_group.replace(" ", "-").lower())
+    if search_term:
+        path.append(search_term.replace(" ", "-").lower())
+    return f"{base_url}/{'-'.join(path)}"
+
+def generate_alibaba_url(search_term=None, category=None, min_price=None, max_price=None):
+    base_url = "https://www.alibaba.com/trade/search"
+    params = {}
+    if search_term:
+        params['SearchText'] = search_term
+    if category:
+        params['catId'] = category
+    if min_price:
+        params['minPrice'] = min_price
+    if max_price:
+        params['maxPrice'] = max_price
+    return f"{base_url}?{urlencode(params)}" if params else "https://www.alibaba.com"
+
+def generate_amazon_url(search_term=None, category=None, gender=None, age_group=None, min_price=None, max_price=None):
+    base_url = "https://www.amazon.com/s"
+    params = {}
+
+    if search_term:
+        params['k'] = search_term
+    if category:
+        params['i'] = category  # e.g., 'fashion-womens'
+    if gender:  # 'mens', 'womens', 'girls', 'boys'
+        params['bbn'] = gender
+    if age_group:  # 'age-0-2', 'age-3-6'
+        params['rh'] = f"n:{age_group}"
+    if min_price:
+        params['low-price'] = min_price
+    if max_price:
+        params['high-price'] = max_price
+
+    return f"{base_url}?{urlencode(params)}" if params else base_url
+
+def generate_flipkart_url(search_term=None, gender=None, age_group=None):
+    base_url = "https://www.flipkart.com/search"
+    params = {}
+
+    if search_term:
+        params['q'] = search_term
+    if gender:  # 'Men', 'Women', 'Boys', 'Girls'
+        params['p[]'] = f"facets.gender[]%3D{quote(gender)}"
+    if age_group:  # '0-2', '3-6', '7-12'
+        params['p[]'] = f"facets.age_group[]%3D{quote(age_group)}"
+
+    return f"{base_url}?{urlencode(params, doseq=True)}" if params else base_url
+
+def detect_shopping_platforms(description):
+    """Check description for platform mentions"""
+    platforms_found = []
+    description_lower = description.lower()
+
+    platform_keywords = {
+        'myntra': ['myntra'],
+        'alibaba': ['alibaba', 'ali express'],
+        'amazon': ['amazon'],
+        'flipkart': ['flipkart']
+    }
+
+    for platform, keywords in platform_keywords.items():
+        if any(keyword in description_lower for keyword in keywords):
+            platforms_found.append(platform)
+
+    return platforms_found
+
+def get_shopping_url_with_fallback(user, description, openai_client=None, gemini_model=None):
+    """Get shopping URL with intelligent fallback"""
+    platforms = get_shopping_platforms()
+    gender = user.get("gender", "").lower()
+    age_group = user.get("age_group", "")
+    fallback_order = ['myntra', 'alibaba', 'amazon', 'flipkart']
+
+    # 1. Check for mentioned platforms in description
+    mentioned_platforms = detect_shopping_platforms(description)
+    if mentioned_platforms:
+        for platform in mentioned_platforms:
+            try:
+                url = platforms[platform](gender=gender, age_group=age_group)
+                return platform, url, f"Showing {platform.capitalize()} (mentioned in description)"
+            except Exception:
+                continue
+
+    # 2. AI Selection (OpenAI -> Gemini)
+    if len(platforms) > 1:  # Only use AI if we have multiple options
+        best_platform = suggest_best_shopping_platform(
+            user,
+            list(platforms.keys()),
+            openai_client,
+            gemini_model
+        )
+
+        if best_platform:
+            try:
+                url = platforms[best_platform](gender=gender, age_group=age_group)
+                return best_platform, url, f"Showing {best_platform.capitalize()} (AI recommended)"
+            except Exception:
+                pass
+
+    # 3. Fallback in predefined order
+    for platform in fallback_order:
+        try:
+            url = platforms[platform](gender=gender, age_group=age_group)
+            return platform, url, f"Showing {platform.capitalize()} (fallback option)"
+        except Exception:
+            continue
+
+    # 4. Ultimate fallback
+    return None, None, "No shopping options available"
+
+def get_ai_shopping_reason(user, platform):
+    """Get AI-generated explanation for platform recommendation"""
+    prompt = f"""
+    Explain in 1-2 sentences why {platform} would be good for:
+    - Location: {user.get('location', {}).get('city', 'Unknown')}
+    - Age: {user.get('age_group', 'Unknown')}
+    - Gender: {user.get('gender', 'Unknown')}
+    - Interests: {user.get('interests', {}).keys()}
+
+    Use simple, user-friendly language. Example:
+    "Amazon has fast delivery in Mumbai and good electronics selection for young adults."
+    """
+
+    try:
+        response = st.session_state.model.generate_content(prompt)
+        return response.text.strip()
+    except Exception:
+        return f"Good shopping option for your location and preferences."
