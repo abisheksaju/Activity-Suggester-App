@@ -2177,9 +2177,9 @@ def plan_diverse_activities(weekend_slots: List[Dict], user: Dict):
         if activity_type == "outdoor" and "travel" in top_3_interests:
             selected_interest = "travel"
 
-        elif: activity_type == "outdoor" and "event" in top_3_interests:
+        elif activity_type == "outdoor" and "event" in top_3_interests:
               selected_interest = "event"
-        elif: activity_type == "outdoor" and "music" in top_3_interests:
+        elif activity_type == "outdoor" and "music" in top_3_interests:
               selected_interest = "music"  
         else:
             # Otherwise select from our biased pool of top 3
