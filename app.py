@@ -69,6 +69,16 @@ from utils import(
     is_valid_url,
     shorten_url,
     track_booking_click,
+    generate_alibaba_url,
+    generate_myntra_url,
+    generate_flipkart_url,
+    generate_amazon_url,
+    open_shopping_site,
+    get_shopping_platforms,
+    suggest_best_shopping_platform,
+    get_shopping_url_with_fallback,
+    detect_shopping_platforms,
+    get_ai_shopping_reason
 )
 
 def add_debug_log(message):
@@ -114,6 +124,7 @@ if "initialized" not in st.session_state:
         TICKETMASTER_API_KEY = st.secrets["TICKETMASTER_API_KEY"]
         EVENTBRITE_API_KEY = st.secrets["EVENTBRITE_API_KEY"]
         PREDICTHQ_API_KEY = st.secrets["PREDICTHQ_API_KEY"]
+        OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY")
 
         # Configure Gemini model
         os.environ['GEMINI_API_KEY'] = GEMINI_API_KEY
@@ -134,6 +145,11 @@ if "initialized" not in st.session_state:
             st.session_state.shown_event_ids = set()
         if "rejected_event_ids" not in st.session_state:
             st.session_state.rejected_event_ids = set()
+
+        if OPENAI_API_KEY:
+            from openai import OpenAI
+            st.session_state.openai_client = OpenAI(api_key=OPENAI_API_KEY)
+
 
         # Set up error tracking
         st.session_state.errors = []
@@ -387,6 +403,40 @@ def render_main_view():
             st.session_state.primary_recommendation
         )
         st.markdown(f"### 📖 More details:\n\n{detailed}")
+
+        # Check if this is shopping-related
+        is_shopping = (
+            "shopping" in recommendation.get("activity_type", "").lower() or
+            any(word in detailed.lower() for word in ["shop", "buy", "purchase"])
+        )
+
+        # Show shopping options if relevant
+        if is_shopping:
+            platform, url, reason = get_shopping_url_with_fallback(
+                user,
+                detailed,
+                openai_client=st.session_state.get('openai_client'),  # Add this to your init
+                gemini_model=st.session_state.model
+            )
+
+            if platform and url:
+                st.markdown("---")
+                st.subheader("🛍️ Shopping Options")
+
+                # Enhanced reason display
+                if "AI recommended" in reason:
+                    st.markdown(f"""
+                    <div style="background-color:#f0f8ff; padding:10px; border-radius:5px; margin-bottom:10px">
+                        <span style="font-weight:bold">Why {platform.capitalize()}?</span><br>
+                        {get_ai_shopping_reason(user, platform)}  # New helper function
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                # Shopping button
+                st.markdown(
+                    f"""<a href="{url}" target="_blank"><button style="...">Shop on {platform.capitalize()}</button></a>""",
+                    unsafe_allow_html=True
+                )
 
         if recommendation.get("type") == "event" and recommendation.get("event_data", {}).get("event_url"):
             event_url = recommendation["event_data"]["event_url"]
@@ -871,11 +921,11 @@ def render_quick_glance_view():
    
     # Display all slots in a grid
     num_cols = 2  # Display 2 slots per row
-    
+
     # Group slots by day
     saturday_slots = [slot for slot in st.session_state.weekend_slots if slot["day"] == "Saturday"]
     sunday_slots = [slot for slot in st.session_state.weekend_slots if slot["day"] == "Sunday"]
-    
+
     # Display Saturday slots
     if saturday_slots:
        st.subheader("Saturday")
@@ -927,7 +977,7 @@ def render_quick_glance_view():
                            st.session_state.selected_slot_id = slot_id
                            st.session_state.current_view = "slot"
                            st.rerun()
-    
+
     # Display Sunday slots
     if sunday_slots:
        st.subheader("Sunday")
