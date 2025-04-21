@@ -52,14 +52,13 @@ from utils import (
     generate_expedia_url,
     generate_hotels_com_url,
     open_booking_platform,
-    plan_diverse_activities,
-    determine_time_period,
-    adjust_activity_type_for_time,
-    select_diverse_interest,
-    balance_activity_types,
+    track_booking_click,
+    shorten_url,
+    is_valid_url,
     mark_event_rejected,
     get_multiple_events,
     choose_event,
+    
     AppError, APIError, LLMError, ImageError
 )
 from utils import astra_manager
@@ -145,30 +144,22 @@ st.title("Plan Less, Live More!")
 
 # Session State Initialization for Weekend Planner
 if "weekend_initialized" not in st.session_state:
-
-    if "quick_glance_activity_registry" not in st.session_state:
-        st.session_state.quick_glance_activity_registry = {
-            "event_ids": set(),  # Store event IDs to avoid duplicates
-            "place_ids": set(),  # Store place IDs to avoid duplicates
-            "activity_descriptions": set(),  # Store hashes of activity descriptions
-        }
-
-    # Get basic user data
-    if "user" not in st.session_state:
-        user = get_synthetic_user()
-        st.session_state.user = user
-    else:
-        user = st.session_state.user
-
-    # Get weekend slots
-    weekend_slots = get_synthetic_weekend_slots()
-
-    # Initialize weekend planning session state variables
-    st.session_state.weekend_slots = weekend_slots
-    st.session_state.booked_slots = {}
-    st.session_state.current_view = "main"
-    st.session_state.slot_recommendations = {}
-    st.session_state.weekend_initialized = True
+   # Get basic user data
+   if "user" not in st.session_state:
+       user = get_synthetic_user()
+       st.session_state.user = user
+   else:
+       user = st.session_state.user
+   
+   # Get weekend slots
+   weekend_slots = get_synthetic_weekend_slots()
+    
+   # Initialize weekend planning session state variables
+   st.session_state.weekend_slots = weekend_slots
+   st.session_state.booked_slots = {}
+   st.session_state.current_view = "main"
+   st.session_state.slot_recommendations = {}
+   st.session_state.weekend_initialized = True
 
 
 
@@ -195,7 +186,7 @@ def render_main_view():
                 recommendation = None
 
                 if decision == "indoor":
-                    prompt = (user, top_interest)
+                    prompt = build_llm_prompt_indoor(user, top_interest)
                     response = st.session_state.model.generate_content(prompt)
                     activity_description = response.text.strip()
 
@@ -236,8 +227,7 @@ def render_main_view():
                         add_debug_log(f"Events API call: {'succeeded' if events_found else 'failed'}")
 
                         if events_found and has_more_events():
-                            exclude_ids = st.session_state.rejected_event_ids.union(st.session_state.shown_event_ids)
-                            available_events = get_multiple_events(count=5, exclude_ids=exclude_ids)
+                            available_events = get_multiple_events(count=5)
                             if available_events:
                                 selected_event, description = choose_event(user, available_events, st.session_state.model)
                                 if selected_event:
@@ -265,15 +255,14 @@ def render_main_view():
                                     recommendation = {
                                         "type": "event",
                                         "name": selected_event['title'],
-                                        "description": description,
+                                        "description": event_description,
                                         "image_url": image_url,
                                         "activity_type": top_interest,
                                         "event_data": selected_event
                                     }
 
-                    else:
+                    if recommendation is None:
                         places = fetch_places(user, top_interest, st.session_state.GOOGLE_MAPS_API_KEY)
-                        add_debug_log(f"Fetched {len(places)} places for interest '{top_interest}'")
                         selected_place, description = choose_place(user, places, st.session_state.model)
                         if selected_place:
                             image_url = fetch_place_image(selected_place, st.session_state.GOOGLE_MAPS_API_KEY)
@@ -286,8 +275,8 @@ def render_main_view():
                                 "activity_type": top_interest
                             }
 
-                else:
-                    prompt = (user, top_interest)
+                if recommendation is None:
+                    prompt = build_llm_prompt_indoor(user, top_interest)
                     response = st.session_state.model.generate_content(prompt)
                     activity_description = response.text.strip()
                     main_keyword = extract_main_keywords(activity_description)
@@ -354,8 +343,6 @@ def render_main_view():
                 event_id = event_data.get("id")
                 if event_id:
                     mark_event_rejected(event_id)
-                    st.session_state.rejected_event_ids.add(event_id)
-                    st.session_state.shown_event_ids.discard(event_id) 
             
             item_data = {
                 "name": recommendation.get("name", "Unknown"),
@@ -390,7 +377,10 @@ def render_main_view():
             """, unsafe_allow_html=True)
         elif maps_html:
             st.markdown(maps_html, unsafe_allow_html=True)
-            show_booking_options(recommendation)
+            with st.spinner("🔄 Loading accommodation options..."):
+                show_booking_options(recommendation)
+                # Optional: Add a small delay for better UX
+                time.sleep(0.5)  # Add import at top: import time
 
     if st.button("📌 Book this slot"):
         if st.session_state.weekend_slots and len(st.session_state.weekend_slots) > 0:
@@ -596,7 +586,7 @@ def render_slot_recommendation(slot_id):
     if recommendation.get("image_url"):
         st.image(recommendation["image_url"], use_container_width=True)
 
-    st.subheader("Suggested Activity")
+    st.subheader("\ud83d\udd0d Suggested Activity")
     st.write(recommendation["description"])
 
     success = astra_manager.record_interaction({
@@ -616,12 +606,12 @@ def render_slot_recommendation(slot_id):
     })
 
     if not success:
-        st.warning("Failed to save interaction to database.")
+        st.warning("\u26a0\ufe0f Failed to save interaction to database.")
 
     if not is_booked:
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("I like it!", key=f"like_slot_{slot_id}"):
+            if st.button("\ud83d\udc4d I like it!", key=f"like_slot_{slot_id}"):
                 item_data = {
                     "name": recommendation.get("name", "Unknown"),
                     "type": recommendation.get("activity_type", "Unknown")
@@ -631,7 +621,7 @@ def render_slot_recommendation(slot_id):
                 st.success("Great! I'll remember you liked this!")
 
         with col2:
-            if st.button("👎Show me something else", key=f"dislike_slot_{slot_id}"):
+            if st.button("\ud83d\udc4e Show me something else", key=f"dislike_slot_{slot_id}"):
                 item_data = {
                     "name": recommendation.get("name", "Unknown"),
                     "type": recommendation.get("activity_type", "Unknown")
@@ -641,7 +631,7 @@ def render_slot_recommendation(slot_id):
                     del st.session_state.slot_recommendations[slot_id]
                 st.rerun()
 
-        if st.button("Tell me more", key=f"more_slot_{slot_id}"):
+        if st.button("\ud83d\udd0e Tell me more", key=f"more_slot_{slot_id}"):
             item_data = {
                 "name": recommendation.get("name", "Unknown"),
                 "type": recommendation.get("activity_type", "Unknown")
@@ -654,21 +644,25 @@ def render_slot_recommendation(slot_id):
                 recommendation.get("activity_type", ""),
                 recommendation
             )
-            st.markdown(f"### More details:\n\n{detailed}")
+            st.markdown(f"### \ud83d\udcd6 More details:\n\n{detailed}")
 
             if recommendation.get("type") == "event" and recommendation.get("event_data", {}).get("event_url"):
                 event_url = recommendation["event_data"]["event_url"]
                 ticket_html = f"""
                 <div style="margin-top: 20px; padding: 10px; background-color: #f0f0f0; border-radius: 5px;">
-                    <strong>🎫Get Tickets:</strong> <a href="{event_url}" target="_blank">Click here to view tickets/details</a>
+                    <strong>\ud83c\udf9b Get Tickets:</strong> <a href="{event_url}" target="_blank">Click here to view tickets/details</a>
                 </div>
                 """
                 st.markdown(ticket_html, unsafe_allow_html=True)
             elif maps_html:
                 st.markdown(maps_html, unsafe_allow_html=True)
-                show_booking_options(recommendation)
+                with st.spinner("🔄 Loading accommodation options..."):
+                    show_booking_options(recommendation)
 
-        if st.button("Book this slot", key=f"book_slot_{slot_id}"):
+                    # Optional: Add a small delay for better UX
+                    time.sleep(0.5)  # Add import at top: import time
+
+        if st.button("\ud83d\udccc Book this slot", key=f"book_slot_{slot_id}"):
             st.session_state.booked_slots[slot_id] = recommendation
             success = astra_manager.record_interaction({
                 "user_id": user.get("user_id", "unknown"),
@@ -682,92 +676,44 @@ def render_slot_recommendation(slot_id):
             st.success(f"Activity booked for {slot['day']} {slot['start_time']} - {slot['end_time']}!")
             st.rerun()
 
-    if st.button("Back to main view", key=f"back_slot_{slot_id}"):
+    if st.button("\u2190 Back to main view", key=f"back_slot_{slot_id}"):
         st.session_state.current_view = "main"
         st.rerun()
+
+
 
 
 def render_quick_glance_view():
    """
    Renders the quick glance view showing all weekend slots with their recommended activities.
-   Uses a diversity planning approach to ensure variety across the weekend.
    """
    # Get user data
    user = st.session_state.user
    
    st.header("Your Weekend Plan - Quick Glance")
    
-   # Initialize activity tracking registry if it doesn't exist
-   if "quick_glance_activity_registry" not in st.session_state:
-       st.session_state.quick_glance_activity_registry = {
-           "event_ids": set(),  # Store event IDs to avoid duplicates
-           "place_ids": set(),  # Store place IDs to avoid duplicates
-           "activity_descriptions": set(),  # Store hashes of activity descriptions
-       }
-   
-   # DIVERSITY PLANNING PHASE
-   # Create or retrieve the diversity plan
-   if "diversity_plan" not in st.session_state:
-       # Generate a new diversity plan for all slots
-       st.session_state.diversity_plan = plan_diverse_activities(st.session_state.weekend_slots)
-       add_debug_log(f"Diversity plan created: {st.session_state.diversity_plan}")
-   
-   # Ensure all slots have recommendations based on the diversity plan
+   # Ensure all slots have recommendations
    for slot in st.session_state.weekend_slots:
        slot_id = slot["id"]
-       
-       # Skip slots that are already booked - we respect user choices
-       if slot_id in st.session_state.booked_slots:
-           continue
-           
-       # Skip slots that already have recommendations
-       if slot_id in st.session_state.slot_recommendations:
-           continue
-       
-       # Get the planned activity type and interest for this slot
-       slot_plan = st.session_state.diversity_plan.get(slot_id, {})
-       planned_activity_type = slot_plan.get("activity_type", "indoor")  # Default to indoor if no plan
-       planned_interest = slot_plan.get("interest", None)
-
-       add_debug_log(f"Slot {slot_id} plan → Type: {planned_activity_type}, Interest: {planned_interest}")
-       
-       with st.spinner(f"Finding an activity for {slot['day']} {slot['start_time']}-{slot['end_time']}..."):
-           # Use the planned interest instead of calculating the top interest independently
-           if planned_interest:
-               top_interest = planned_interest
-           else:
-               # Fallback to standard method if no planned interest
+       if slot_id not in st.session_state.slot_recommendations and slot_id not in st.session_state.booked_slots:
+           with st.spinner(f"Finding an activity for {slot['day']} {slot['start_time']}-{slot['end_time']}..."):
+               # Get top interest
                top_interest = top_activity_interest_llm(user)
-           
-           # If the plan says this should be an indoor activity
-           if planned_activity_type == "indoor":
-               # Generate indoor activity based on the planned interest
-               slot_context = f"You have {slot['duration_hours']} hours available on {slot['day']} from {slot['start_time']} to {slot['end_time']}."
-               prompt = build_llm_prompt_indoor(user, top_interest,user_feedback=slot_context)
-               slot_context = f"You have {slot['duration_hours']} hours available on {slot['day']} from {slot['start_time']} to {slot['end_time']}."
-               prompt = prompt.replace("My context:", f"My context:\n- {slot_context}\n-")
                
-               # Add instruction to make it aligned with the time of day
-               time_period = determine_time_period(slot["start_time"])
-               prompt += f"\n\nIMPORTANT: This is a {time_period} activity. Make it appropriate for this time."
+               # Decide indoor/outdoor
+               decision_prompt = build_llm_decision_prompt(user, top_interest)
+               decision_response = st.session_state.model.generate_content(decision_prompt)
+               decision = decision_response.text.strip().lower()
                
-               # Maximum number of retries to find a unique activity
-               max_retries = 3
-               unique_recommendation_found = False
-               
-               for attempt in range(max_retries):
-                   # If this is a retry, add instruction to make it different
-                   if attempt > 0:
-                       prompt += f"\n\nIMPORTANT: Please suggest a completely different activity than before."
+               # Follow the full recommendation flow
+               if decision == "indoor":
+                   # Generate indoor activity
+                   prompt = build_llm_prompt_indoor(user, top_interest)
+                   slot_context = f"You have {slot['duration_hours']} hours available on {slot['day']} from {slot['start_time']} to {slot['end_time']}."
+                   prompt = prompt.replace("My context:", f"My context:\n- {slot_context}\n-")
                    
                    response = st.session_state.model.generate_content(prompt)
                    activity_description = response.text.strip()
-                   
-                   # Check if this description is too similar to existing ones
-                   desc_hash = hash(activity_description[:100])
-                   if desc_hash in st.session_state.quick_glance_activity_registry["activity_descriptions"]:
-                       if attempt < max_retries - 1:
-                           continue  # Try again if we haven't reached max attempts
                    
                    # Get image
                    main_keyword = extract_main_keywords(activity_description)
@@ -778,70 +724,52 @@ def render_quick_glance_view():
                        "name": f"Indoor {top_interest} Activity",
                        "description": activity_description,
                        "image_url": image_url,
-                       "activity_type": top_interest,
-                       "unique_id": desc_hash  # Store the hash for future reference
+                       "activity_type": top_interest
                    }
+               elif decision == "outdoor":
+                   # Check if event-related interest
+                   event_related_interests = ["music", "sports", "entertainment", "theatre", "concerts", "festivals", "event", "arts"]
+                   is_event_related = top_interest.lower() in [interest.lower() for interest in event_related_interests]
                    
-                   # Register this activity
-                   st.session_state.quick_glance_activity_registry["activity_descriptions"].add(desc_hash)
-                   unique_recommendation_found = True
-                   break
-           
-           # If the plan says this should be an event
-           elif planned_activity_type == "event":
-               try:
-                   # Get location & date info
-                   city = user.get("location", {}).get("city", "")
-                   country_code = user.get("location", {}).get("country_code", "US")
-                   
-                   # Use the slot's date
-                   slot_date = None
-                   if "saturday" in slot["day"].lower():
-                       saturday, _ = get_upcoming_weekend(datetime.now())
-                       slot_date = saturday
-                   elif "sunday" in slot["day"].lower():
-                       _, sunday = get_upcoming_weekend(datetime.now())
-                       slot_date = sunday
-                       
-                   if slot_date:
-                       date_str = slot_date.strftime("%Y-%m-%d")
-                       
-                       # Try to fetch events for this specific date and interest
-                       events_found = fetch_and_store_events(
-                           interest=top_interest,
-                           city=city,
-                           country_code=country_code,
-                           start_date=date_str,
-                           end_date=date_str
-                       )
-                       
-                       if events_found and has_more_events():
-                           # Create exclude lists for event IDs
-                           exclude_event_ids = st.session_state.quick_glance_activity_registry["event_ids"].union(
-                               st.session_state.rejected_event_ids).union(st.session_state.shown_event_ids)
+                   if is_event_related:
+                       try:
+                           # Get location & date info
+                           city = user.get("location", {}).get("city", "")
+                           country_code = user.get("location", {}).get("country_code", "US")
                            
-                           # Get multiple events (excluding already used ones)
-                           available_events = get_multiple_events(count=5, exclude_ids=exclude_event_ids)
-                           
-                           if available_events:
-                               # Add time context
-                               slot_context = f"This event is for {slot['day']} {slot['start_time']}-{slot['end_time']} (duration: {slot['duration_hours']} hours)."
-                               selected_event, description = choose_event(user, available_events, st.session_state.model, user_feedback=slot_context)
+                           # Use the slot's date instead of calculating weekend
+                           slot_date = None
+                           if "saturday" in slot["day"].lower():
+                               saturday, _ = get_upcoming_weekend(datetime.now())
+                               slot_date = saturday
+                           elif "sunday" in slot["day"].lower():
+                               _, sunday = get_upcoming_weekend(datetime.now())
+                               slot_date = sunday
                                
-                               if selected_event:
-                                   event_id = selected_event.get("id")
-                                   
-                                   # Only proceed if we haven't used this event before
-                                   if event_id and event_id not in exclude_event_ids:
-                                       # Format event description
-                                       event_description = f"Check out this event: **{selected_event['title']}**\n\n"
-                                       event_description += f"📅 **Date:** {selected_event['date']}\n"
-                                       event_description += f"📍 **Location:** {selected_event['location']}\n"
+                           if slot_date:
+                               date_str = slot_date.strftime("%Y-%m-%d")
+                               
+                               # Try to fetch events for this specific date
+                               events_found = fetch_and_store_events(
+                                   interest=top_interest,
+                                   city=city,
+                                   country_code=country_code,
+                                   start_date=date_str,
+                                   end_date=date_str
+                               )
+                               
+                               if events_found and has_more_events():
+                                   event = get_next_event_for_display()
+                                   if event:
+                                       # Format event for this slot
+                                       event_description = f"Check out this event: **{event['title']}**\n\n"
+                                       event_description += f"📅 **Date:** {event['date']}\n"
+                                       event_description += f"📍 **Location:** {event['location']}\n"
                                        
                                        # Get image for event
                                        image_url = None
                                        try:
-                                           keywords = extract_keywords_from_prompt(selected_event['title'])
+                                           keywords = extract_keywords_from_prompt(event['title'])
                                            for keyword in keywords:
                                                if keyword and len(keyword.strip()) >= 3:
                                                    img_url = fetch_image_for_keyword(keyword, st.session_state.GOOGLE_MAPS_API_KEY)
@@ -853,84 +781,67 @@ def render_quick_glance_view():
                                        
                                        recommendation = {
                                            "type": "event",
-                                           "name": selected_event['title'],
-                                           "description": description,
+                                           "name": event['title'],
+                                           "description": event_description,
                                            "image_url": image_url,
                                            "activity_type": top_interest,
-                                           "event_data": selected_event,
-                                           "event_id": event_id
+                                           "event_data": event
                                        }
-                                       
-                                       # Register this event
-                                       st.session_state.quick_glance_activity_registry["event_ids"].add(event_id)
-                                       unique_recommendation_found = True
-                                       
-                                       # Save the recommendation
+                                       # Successfully created event recommendation
                                        st.session_state.slot_recommendations[slot_id] = recommendation
-                                       continue  # Skip to next slot
-               except Exception as e:
-                   logging.error(f"Error processing event for slot: {str(e)}")
-           
-           # If the plan says this should be an outdoor activity or if event processing failed
-           if planned_activity_type == "outdoor" or (planned_activity_type == "event" and "recommendation" not in locals()):
-               try:
-                   # Add slot context for outdoor selection
-                   slot_context = f"You have {slot['duration_hours']} hours available on {slot['day']} from {slot['start_time']} to {slot['end_time']}."
-                   places = fetch_places(user, top_interest, st.session_state.GOOGLE_MAPS_API_KEY)
+                                       
+                       except Exception as e:
+                           logging.error(f"Error fetching events for slot: {str(e)}")
                    
-                   # Filter out places we've already used
-                   exclude_place_ids = st.session_state.quick_glance_activity_registry["place_ids"]
-                   if exclude_place_ids:
-                       places = [place for place in places if place.get("place_id") not in exclude_place_ids]
-                   
-                   if places:
+                   # If we reached here, either not event-related or no events found
+                   # Fall back to places
+                   try:
+                       # Add slot context for outdoor selection
+                       slot_context = f"The user has {slot['duration_hours']} hours available on {slot['day']} from {slot['start_time']} to {slot['end_time']}."
+                       places = fetch_places(user, top_interest, st.session_state.GOOGLE_MAPS_API_KEY)
                        selected_place, description = choose_place(user, places, st.session_state.model, user_feedback=slot_context)
                        
                        if selected_place:
-                           place_id = selected_place.get("place_id")
+                           image_url = fetch_place_image(selected_place, st.session_state.GOOGLE_MAPS_API_KEY)
+                           recommendation = {
+                               "type": "outdoor",
+                               "place": selected_place,
+                               "name": selected_place.get("name", "Unknown place"),
+                               "description": description,
+                               "image_url": image_url,
+                               "activity_type": top_interest
+                           }
+                       else:
+                           # Final fallback to indoor if no places found
+                           prompt = build_llm_prompt_indoor(user, top_interest)
+                           slot_context = f"You have {slot['duration_hours']} hours available on {slot['day']} from {slot['start_time']} to {slot['end_time']}."
+                           prompt = prompt.replace("My context:", f"My context:\n- {slot_context}\n-")
                            
-                           # Only proceed if we haven't used this place before
-                           if place_id and place_id not in exclude_place_ids:
-                               image_url = fetch_place_image(selected_place, st.session_state.GOOGLE_MAPS_API_KEY)
-                               recommendation = {
-                                   "type": "outdoor",
-                                   "place": selected_place,
-                                   "name": selected_place.get("name", "Unknown place"),
-                                   "description": description,
-                                   "image_url": image_url,
-                                   "activity_type": top_interest,
-                                   "place_id": place_id
-                               }
-                               
-                               # Register this place
-                               st.session_state.quick_glance_activity_registry["place_ids"].add(place_id)
-                               unique_recommendation_found = True
-               except Exception as e:
-                   logging.error(f"Error processing outdoor for slot: {str(e)}")
-           
-           # If we still don't have a unique recommendation, fall back to a generic one
-           if "unique_recommendation_found" not in locals() or not unique_recommendation_found:
-               # Final fallback to generic indoor activity
-               prompt = build_llm_prompt_indoor(user, top_interest)
-               slot_context = f"You have {slot['duration_hours']} hours available on {slot['day']} from {slot['start_time']} to {slot['end_time']}."
-               prompt = prompt.replace("My context:", f"My context:\n- {slot_context}\n-")
-               prompt += "\n\nIMPORTANT: Please suggest a completely unique activity, different from standard suggestions."
+                           response = st.session_state.model.generate_content(prompt)
+                           activity_description = response.text.strip()
+                           main_keyword = extract_main_keywords(activity_description)
+                           image_url = fetch_image_for_keyword(main_keyword, st.session_state.GOOGLE_MAPS_API_KEY)
+                           
+                           recommendation = {
+                               "type": "indoor",
+                               "name": f"Indoor {top_interest} Activity",
+                               "description": activity_description,
+                               "image_url": image_url,
+                               "activity_type": top_interest
+                           }
+                   except Exception as e:
+                       logging.error(f"Error processing outdoor for slot: {str(e)}")
+                       # Emergency indoor fallback
+                       recommendation = {
+                           "type": "indoor",
+                           "name": "Activity Suggestion",
+                           "description": "Try something fun related to your interests!",
+                           "image_url": None,
+                           "activity_type": top_interest
+                       }
                
-               response = st.session_state.model.generate_content(prompt)
-               activity_description = response.text.strip()
-               main_keyword = extract_main_keywords(activity_description)
-               image_url = fetch_image_for_keyword(main_keyword, st.session_state.GOOGLE_MAPS_API_KEY)
-               
-               recommendation = {
-                   "type": "indoor",
-                   "name": f"Indoor {top_interest} Activity",
-                   "description": activity_description,
-                   "image_url": image_url,
-                   "activity_type": top_interest
-               }
-           
-           # Store recommendation in session state
-           st.session_state.slot_recommendations[slot_id] = recommendation
+               # Store recommendation in session state
+               st.session_state.slot_recommendations[slot_id] = recommendation
    
    # Display all slots in a grid
    num_cols = 2  # Display 2 slots per row
@@ -971,10 +882,6 @@ def render_quick_glance_view():
                        # Show event tag if it's an event
                        if recommendation.get("type") == "event":
                            st.info("🎟️ Event")
-                       elif recommendation.get("type") == "outdoor":
-                           st.info("🌳 Outdoor")
-                       elif recommendation.get("type") == "indoor":
-                           st.info("🏠 Indoor")
                        
                        if recommendation.get("image_url"):
                            st.image(recommendation["image_url"], width=200)
@@ -1023,10 +930,6 @@ def render_quick_glance_view():
                        # Show event tag if it's an event
                        if recommendation.get("type") == "event":
                            st.info("🎟️ Event")
-                       elif recommendation.get("type") == "outdoor":
-                           st.info("🌳 Outdoor")
-                       elif recommendation.get("type") == "indoor":
-                           st.info("🏠 Indoor")
                        
                        if recommendation.get("image_url"):
                            st.image(recommendation["image_url"], width=200)
@@ -1047,7 +950,6 @@ def render_quick_glance_view():
    if st.button("← Back to main view", key="back_from_quickglance"):
        st.session_state.current_view = "main"
        st.rerun()
-
 
 # View Management
 if "current_view" not in st.session_state:

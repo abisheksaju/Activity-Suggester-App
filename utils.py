@@ -26,6 +26,8 @@ import pytz
 from typing import List, Dict, Optional
 import webbrowser
 from urllib.parse import quote, urlencode
+from urllib.parse import urlparse
+import pyshorteners
 
 # Make sure to set OPENAI_API_KEY in your environment or replace here.
 #openai.api_key = os.getenv("OPENAI_API_KEY", "your-default-api-key")
@@ -511,9 +513,9 @@ def get_synthetic_user():
     user_data = {
         "user_id": "us001",
         "location": {
-            "city": "Chicago",
-            "lat": 41.8781,
-            "lon": 87.6298
+            "city": "New York",
+            "lat": 37.7749,
+            "lon": 122.4194
         },
         "weather": "Clear",
         "current_time": "Tuesday 3 PM",
@@ -1130,12 +1132,9 @@ def build_llm_prompt_indoor(user, top_interest, user_feedback=None):
     return prompt.strip()
 
 @safe_api_call
-
-
 def fetch_places(user, interest_type, api_key):
     """
-    Fetch places from Google Maps Places API based on user context and interest.
-    Falls back to keyword-based search for 'travel' if no places are found.
+    Fetch places from Google Maps Places API based on user context and interest
     """
     try:
         gmaps = googlemaps.Client(key=api_key)
@@ -1143,10 +1142,11 @@ def fetch_places(user, interest_type, api_key):
         # Get location from user
         lat = user.get('location', {}).get('lat')
         lon = user.get('location', {}).get('lon')
+        
         if not lat or not lon:
             logger.warning("Missing user location coordinates")
             return []
-
+        
         # Map interest types to Google Maps place types
         place_type_mapping = {
             'food': 'restaurant',
@@ -1156,48 +1156,22 @@ def fetch_places(user, interest_type, api_key):
             'gaming': 'amusement_park',
             'cooking': 'kitchen'
         }
+        
+        # Get place type from interest
         place_type = place_type_mapping.get(interest_type, 'point_of_interest')
-
-        # First attempt: standard nearby search
-        if interest_type == "travel":
-            places_result = gmaps.places_nearby(
-                location=(lat, lon),
-                radius=100000,
-                type=place_type,
-                keyword = "things to do"
-            )
-        else:
-            places_result = gmaps.places_nearby(
-                location=(lat, lon),
-                radius=50000,
-                type=place_type,
-                open_now=True
-            )
-
-        places = places_result.get('results', [])
-        if places:
-            logger.info(f"[Places API] Found {len(places)} results for interest '{interest_type}'")
-            return places
-
-        # Fallback for travel: keyword search
-        if interest_type == "travel":
-            user_city = user.get("location", {}).get("city", "")
-            fallback_result = gmaps.places(
-                query=f"top tourist attractions in {user_city}",
-                location=(lat, lon),
-                radius=20000
-            )
-            fallback_places = fallback_result.get('results', [])
-            logger.warning(f"[Fallback] No results from places_nearby for 'travel'. "
-                           f"Used keyword search and got {len(fallback_places)} results.")
-            return fallback_places
-
-        return []
-
+        
+        # Search for places
+        places_result = gmaps.places_nearby(
+            location=(lat, lon),
+            radius=20000,  # 20km radius
+            type=place_type,
+            open_now=True
+        )
+        
+        return places_result.get('results', [])
     except Exception as e:
         logger.error(f"Error fetching places: {str(e)}")
         return []
-
 
 def build_personalized_context(user, top_interest):
     """
@@ -1348,8 +1322,8 @@ def get_user_preferences_db():
             "category_preferences": {
                 "food": 0.2,
                 "travel": 0.9,
-                "event": 0.4,
-                "music": 0.7,
+                "event": 0.7,
+                "shopping": 0.3,
                 "gaming": 0.3,
                 "news": 0.2,
                 "fitness": 0.3,
@@ -1748,7 +1722,7 @@ def open_booking_platform(platform, url):
     return {"status": "success", "platform": platform, "url": url}
 
 def show_booking_options(recommendation):
-    """Display booking dropdown with comprehensive error handling"""
+    """Enhanced booking options display with all features"""
     try:
         # Validate recommendation structure
         if not recommendation or not isinstance(recommendation, dict):
@@ -1780,49 +1754,118 @@ def show_booking_options(recommendation):
             st.warning("No booking options available - date error")
             return
 
-        # Generate URLs
-        try:
-            booking_urls = generate_booking_urls(
-                location=place_address,
-                check_in=saturday,
-                check_out=sunday,
-                guests=2,
-                rooms=1
-            )
+        # Show loading state while generating URLs
+        with st.spinner("Loading booking options..."):
+            # Generate URLs
+            try:
+                booking_urls = generate_booking_urls(
+                    location=place_address,
+                    check_in=saturday,
+                    check_out=sunday,
+                    guests=2,
+                    rooms=1
+                )
 
-            if not booking_urls:
-                st.warning("No booking options available")
+                if not booking_urls:
+                    st.warning("No booking options available")
+                    return
+
+            except Exception:
+                st.warning("No booking options available - service error")
                 return
-
-        except Exception:
-            st.warning("No booking options available - service error")
-            return
 
         # Display UI
         st.markdown("---")
         st.subheader("🏨 Need accommodation?")
 
-        col1, col2 = st.columns([3, 2])
+        selected_platform = st.selectbox(
+            "Choose a booking site:",
+            options=[""] + list(booking_urls.keys()),
+            format_func=lambda x: "Select a platform" if x == "" else x.capitalize(),
+            key=f"platform_select_{recommendation.get('name', '')}"
+        )
 
-        with col1:
-            selected_platform = st.selectbox(
-                "Choose a booking site:",
-                options=[""] + list(booking_urls.keys()),
-                format_func=lambda x: "Select a platform" if x == "" else x.capitalize(),
-                key=f"platform_select_{recommendation.get('name', '')}"
+        if selected_platform:
+            platform_name = selected_platform.capitalize()
+            url = booking_urls[selected_platform]
+
+            # Validate URL
+            if not is_valid_url(url):
+                st.error(f"Invalid booking URL for {platform_name}")
+                return
+
+            # Shorten URL for display (keeps original for redirect)
+            display_url = shorten_url(url)
+
+            # Mobile-friendly booking button with tracking
+            st.markdown(
+                f"""
+                <div style="width:100%; margin:10px 0">
+                    <a href="{url}" target="_blank"
+                       onclick="console.log('Booking click: {platform_name}');"
+                       style="display:block; width:100%; text-decoration:none">
+                        <button style="
+                            width:100%;
+                            background-color:#FF5A5F;
+                            color:white;
+                            border:none;
+                            padding:12px 24px;
+                            text-align:center;
+                            font-size:16px;
+                            cursor:pointer;
+                            border-radius:4px;
+                            font-weight:bold;
+                        ">
+                            🏨 Book on {platform_name}
+                        </button>
+                    </a>
+                    <small style="color:#666; display:block; text-align:center; margin-top:4px">
+                        {display_url}
+                    </small>
+                </div>
+                """,
+                unsafe_allow_html=True
             )
 
-        with col2:
-            if selected_platform:
-                platform_name = selected_platform.capitalize()
-                if st.button(f"Book on {platform_name}"):
-                    open_booking_platform(selected_platform, booking_urls[selected_platform])
-            else:
-                st.button("Select platform first", disabled=True)
+            # Track the click (server-side)
+            track_booking_click(platform_name, url)
+
+            # For local development
+            if os.environ.get("STREAMLIT_LOCAL_DEVELOPMENT"):
+                open_booking_platform(selected_platform, url)
 
     except Exception as e:
         st.error("Failed to load booking options")
-        print(f"Booking error: {str(e)}")  # Log full error for debugging
+        print(f"Booking error: {str(e)}")
+
+#Function to shorten the url
+def shorten_url(url):
+    """Shorten long booking URLs for cleaner display"""
+    try:
+        if len(url) > 50:  # Only shorten if URL is long
+            return pyshorteners.Shortener().tinyurl.short(url)
+        return url
+    except Exception as e:
+        print(f"URL shortening failed: {e}")
+        return url
+
+# Function to track booking click
+def track_booking_click(platform, url):
+    """Log booking platform clicks"""
+    try:
+        # Basic print logging (replace with your analytics service)
+        print(f"📊 Booking click tracked - Platform: {platform} | URL: {url[:100]}...")
+
+        # Example: Add to session state for analytics
+        if 'booking_clicks' not in st.session_state:
+            st.session_state.booking_clicks = []
+        st.session_state.booking_clicks.append({
+            'platform': platform,
+            'time': datetime.now().isoformat(),
+            'url_hash': hash(url)  # Store hash for privacy
+        })
+    except Exception as e:
+        print(f"Tracking error: {e}")
 
 # Enhanced version of choose_place with better error handling
 @safe_api_call
@@ -2064,316 +2107,54 @@ Mention only one event by name.
         logger.error(traceback.format_exc())
         return None, "We encountered an unexpected error with event recommendations."
 
+def is_valid_url(url):
+    """Check if a URL is properly formatted"""
+    try:
+        result = urlparse(url)
+        return all([result.scheme in ('http', 'https'), result.netloc])
+    except:
+        return False
 
-
-def get_multiple_events(count=5, exclude_ids=None):
-    if exclude_ids is None:
-        exclude_ids = set()
+def get_multiple_events(count=5):
+    """
+    Retrieves multiple events from storage.
     
+    Args:
+        count (int): Number of events to retrieve
+        
+    Returns:
+        list: A list of event objects
+    """
+    global event_storage
     events = []
-    while len(events) < count and event_storage.has_more_events():
-        next_event = event_storage.get_next_event()
-        if next_event and next_event.get("id") not in exclude_ids:
-            events.append(next_event)
+    
+    # Save current index to restore it later
+    original_index = event_storage.current_index
+    
+    # Check how many events are available
+    available = 0
+    temp_index = event_storage.current_index
+    while temp_index < len(event_storage.events):
+        available += 1
+        temp_index += 1
+    
+    # Retrieve up to count events
+    fetch_count = min(count, available)
+    for _ in range(fetch_count):
+        event = event_storage.get_next_event()
+        if event:
+            events.append(event)
+    
+    # Restore original index (so we don't actually consume these events yet)
+    event_storage.current_index = original_index
     
     return events
-
-
 
 
 def mark_event_rejected(event_id):
     """Mark an event as rejected to avoid showing it again"""
     if event_id and "rejected_event_ids" in st.session_state:
         st.session_state.rejected_event_ids.add(event_id)
-
-
-
-def plan_diverse_activities(weekend_slots):
-    """
-    Creates a holistic plan for diverse activities across all weekend slots.
-    
-    Args:
-        weekend_slots (list): List of all weekend time slots
-        
-    Returns:
-        dict: A diversity plan with assigned activity types and interests for each slot
-    """
-    # Initialize diversity plan
-    diversity_plan = {}
-    
-    # Get existing booked slots to respect user choices
-    booked_slots = st.session_state.get("booked_slots", {})
-    
-    # Prepare slots by day and time period
-    saturday_slots = [s for s in weekend_slots if "saturday" in s["day"].lower()]
-    sunday_slots = [s for s in weekend_slots if "sunday" in s["day"].lower()]
-    
-    # Sort slots by start time
-    saturday_slots.sort(key=lambda x: parse_time_to_minutes(x["start_time"]))
-    sunday_slots.sort(key=lambda x: parse_time_to_minutes(x["start_time"]))
-    
-    # Allocate core activity types across weekend using a balanced approach
-    # We want a mix of indoor, outdoor, and events
-    all_slots = saturday_slots + sunday_slots
-    
-    # Start with initial allocation
-    activity_types = ["indoor", "outdoor", "event"] * (len(all_slots) // 3 + 1)
-    activity_types = activity_types[:len(all_slots)]
-    
-    # Shuffle to avoid predictable patterns while maintaining balance
-    random.shuffle(activity_types)
-    
-    # Map slots to time periods
-    for i, slot in enumerate(all_slots):
-        slot_id = slot["id"]
-        
-        # Skip already booked slots
-        if slot_id in booked_slots:
-            # Respect the user's choice but still track for diversity
-            booked_activity = booked_slots[slot_id]
-            diversity_plan[slot_id] = {
-                "activity_type": booked_activity.get("type", "indoor"),
-                "interest": booked_activity.get("activity_type", "general"),
-                "is_booked": True
-            }
-            continue
-        
-        # Determine time period
-        time_period = determine_time_period(slot["start_time"])
-        
-        # Get appropriate activity type for this slot
-        # If we're on the last few slots, ensure balance
-        if i >= len(all_slots) - 3:
-            # Count types so far
-            type_counts = {}
-            for s_id, plan in diversity_plan.items():
-                a_type = plan.get("activity_type")
-                type_counts[a_type] = type_counts.get(a_type, 0) + 1
-            
-            # Find underrepresented type
-            if type_counts.get("indoor", 0) <= type_counts.get("outdoor", 0) and type_counts.get("indoor", 0) <= type_counts.get("event", 0):
-                activity_type = "indoor"
-            elif type_counts.get("outdoor", 0) <= type_counts.get("event", 0):
-                activity_type = "outdoor"
-            else:
-                activity_type = "event"
-        else:
-            # Use pre-shuffled, balanced list
-            activity_type = activity_types[i]
-            
-            # Adjust type based on time appropriateness
-            activity_type = adjust_activity_type_for_time(activity_type, time_period)
-        
-        # Select a diverse interest for this slot (will be done separately)
-        diversity_plan[slot_id] = {
-            "activity_type": activity_type,
-            "time_period": time_period,
-            "is_booked": False
-        }
-    
-    # Now select diverse interests for the slots
-    used_interests = {}
-    for slot_id in diversity_plan:
-        if diversity_plan[slot_id].get("is_booked", False):
-            # Skip booked slots for interest selection
-            continue
-            
-        # Select diverse interest for this activity type and time period
-        selected_interest = select_diverse_interest(used_interests, 
-                                                   diversity_plan[slot_id]["activity_type"],
-                                                   diversity_plan[slot_id]["time_period"])
-        
-        diversity_plan[slot_id]["interest"] = selected_interest
-        
-        # Track that we've used this interest
-        used_interests[selected_interest] = used_interests.get(selected_interest, 0) + 1
-    
-    return diversity_plan
-
-
-def determine_time_period(time_str):
-    """
-    Determines the time period (morning, afternoon, evening) based on the time.
-    
-    Args:
-        time_str (str): Time string (e.g., "7 AM", "3 PM")
-        
-    Returns:
-        str: Time period ("morning", "afternoon", or "evening")
-    """
-    # Convert time to minutes since midnight
-    minutes = parse_time_to_minutes(time_str)
-    
-    # Classify based on time ranges
-    if minutes < 12 * 60:  # Before noon
-        return "morning"
-    elif minutes < 17 * 60:  # Before 5 PM
-        return "afternoon"
-    else:
-        return "evening"
-
-
-def adjust_activity_type_for_time(activity_type, time_period):
-    """
-    Adjusts activity types based on time appropriateness.
-    
-    Args:
-        activity_type (str): Proposed activity type
-        time_period (str): Time period of the slot
-        
-    Returns:
-        str: Potentially adjusted activity type
-    """
-    # Some simple rules for time appropriateness
-    if time_period == "morning":
-        # Morning is great for outdoor activities, less ideal for events
-        if activity_type == "event" and random.random() < 0.7:
-            return "outdoor"
-    
-    elif time_period == "evening":
-        # Evening is better for events, less ideal for outdoor activities
-        if activity_type == "outdoor" and random.random() < 0.7:
-            return "event" if random.random() < 0.5 else "indoor"
-    
-    # For afternoon, all activity types are generally appropriate
-    
-    return activity_type
-
-
-def select_diverse_interest(used_interests, activity_type, time_period):
-    """
-    Selects an interest category that promotes diversity, considering already used interests.
-    
-    Args:
-        used_interests (dict): Interests already used and their counts
-        activity_type (str): Type of activity (indoor, outdoor, event)
-        time_period (str): Time period (morning, afternoon, evening)
-        
-    Returns:
-        str: Selected interest category
-    """
-    # Get user interests and adjust based on previous selections
-    user = st.session_state.user
-    all_interests = get_adjusted_interests(user)
-    
-    # Add time-appropriate interests if they don't exist
-    time_appropriate_interests = {
-        "morning": ["fitness", "travel", "nature"],
-        "afternoon": ["shopping", "food", "travel", "event"],
-        "evening": ["music", "event", "food", "entertainment"]
-    }
-    
-    # Add type-appropriate interests
-    type_appropriate_interests = {
-        "indoor": ["cooking", "gaming", "reading", "art"],
-        "outdoor": ["travel", "sports", "fitness", "nature"],
-        "event": ["music", "entertainment", "arts", "sports"]
-    }
-    
-    # Combine user interests with appropriate ones for this slot
-    relevant_interests = dict(all_interests)
-    
-    # Add time and type appropriate interests if not already present
-    for interest in time_appropriate_interests.get(time_period, []):
-        if interest not in relevant_interests:
-            relevant_interests[interest] = 0.5  # Default medium score
-            
-    for interest in type_appropriate_interests.get(activity_type, []):
-        if interest not in relevant_interests:
-            relevant_interests[interest] = 0.5  # Default medium score
-    
-    # Apply diversity adjustments - reduce score for frequently used interests
-    for interest, count in used_interests.items():
-        if interest in relevant_interests:
-            # Reduce by 20% for each previous use
-            relevant_interests[interest] *= max(0.2, 1.0 - (count * 0.2))
-    
-    # Select interest based on adjusted weights
-    interests = list(relevant_interests.keys())
-    weights = list(relevant_interests.values())
-    
-    # Normalize weights
-    total = sum(weights)
-    if total > 0:
-        weights = [w/total for w in weights]
-    else:
-        # Equal weights if all are zero
-        weights = [1.0/len(weights)] * len(weights)
-    
-    # Select based on weighted probabilities
-    selected_interest = random.choices(interests, weights=weights, k=1)[0]
-    
-    return selected_interest
-
-
-def balance_activity_types(weekend_slots, current_plan=None):
-    """
-    Ensures a balanced mix of activity types across the weekend.
-    
-    Args:
-        weekend_slots (list): List of all weekend slots
-        current_plan (dict, optional): Existing diversity plan to adjust
-        
-    Returns:
-        dict: Adjusted plan with balanced activity types
-    """
-    if current_plan is None:
-        current_plan = {}
-    
-    # Count current activity types
-    type_counts = {"indoor": 0, "outdoor": 0, "event": 0}
-    
-    for slot_id, plan in current_plan.items():
-        activity_type = plan.get("activity_type")
-        if activity_type in type_counts:
-            type_counts[activity_type] += 1
-    
-    # Calculate target counts
-    total_slots = len(weekend_slots)
-    target_per_type = total_slots / 3  # Aim for equal distribution
-    
-    # Identify underrepresented types
-    adjustments_needed = {}
-    for activity_type, count in type_counts.items():
-        if count < target_per_type:
-            adjustments_needed[activity_type] = target_per_type - count
-    
-    # Identify overrepresented types
-    overrepresented = []
-    for activity_type, count in type_counts.items():
-        if count > target_per_type:
-            # Add multiple times based on how overrepresented
-            for _ in range(int(count - target_per_type)):
-                overrepresented.append(activity_type)
-    
-    # Balance by adjusting non-booked slots
-    if adjustments_needed and overrepresented:
-        for slot_id, plan in current_plan.items():
-            # Skip booked slots
-            if plan.get("is_booked", False):
-                continue
-                
-            activity_type = plan["activity_type"]
-            
-            # Check if this type is overrepresented
-            if activity_type in overrepresented:
-                # Find an underrepresented type to switch to
-                for needed_type, needed_count in adjustments_needed.items():
-                    if needed_count > 0:
-                        # Switch this slot to the needed type
-                        current_plan[slot_id]["activity_type"] = needed_type
-                        
-                        # Update counts
-                        adjustments_needed[needed_type] -= 1
-                        overrepresented.remove(activity_type)
-                        
-                        break
-                        
-                # Stop if we've balanced everything
-                if not adjustments_needed or not overrepresented:
-                    break
-    
-    return current_plan
 
 
 
