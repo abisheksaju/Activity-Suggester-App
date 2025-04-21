@@ -519,7 +519,7 @@ def get_synthetic_user():
             "lon": 87.6298
         },
         "weather": "Clear",
-        "current_time": "Tuesday 3 PM",
+        "current_time": "Saturday 7 AM",
         #"free_hours": 4,
         "calendar": [
             {"event": "Lunch with friend", "start": "1 PM", "end": "2 PM"},
