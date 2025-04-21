@@ -1163,7 +1163,8 @@ def fetch_places(user, interest_type, api_key):
             places_result = gmaps.places_nearby(
                 location=(lat, lon),
                 radius=100000,
-                type=place_type
+                type=place_type,
+                keyword = "things to do"
             )
         else:
             places_result = gmaps.places_nearby(
