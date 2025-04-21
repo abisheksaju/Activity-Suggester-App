@@ -1162,7 +1162,7 @@ def fetch_places(user, interest_type, api_key):
         if interest_type == "travel":
             places_result = gmaps.places_nearby(
                 location=(lat, lon),
-                radius=50000,
+                radius=100000,
                 type=place_type
             )
         else:
