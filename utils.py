@@ -2173,10 +2173,17 @@ def plan_diverse_activities(weekend_slots: List[Dict], user: Dict):
         activity_type = diversity_plan[slot_id]["activity_type"]
         
         # For outdoor, favor travel-related interests if available
-        if activity_type == "outdoor" and "travel" in top_3_interests:
-            selected_interest = "travel"
+        if activity_type == "outdoor":
+            if random.random() < 0.6:  # 60% chance to use top interest
+                selected_interest = top_3_interests[0]  # Use top interest
+            elif len(top_3_interests) > 1 and random.random() < 0.8:  # 32% chance for second
+                selected_interest = top_3_interests[1]  # Use second interest
+            elif len(top_3_interests) > 2:  # 8% chance for third
+                selected_interest = top_3_interests[2]  # Use third interest
+            else:
+                selected_interest = top_3_interests[0]  # Fallback to top
         else:
-            # Otherwise select from our biased pool of top 3
+            # For indoor, use biased selection from all top 3
             selected_interest = random.choice(biased_interest_pool)
 
         diversity_plan[slot_id]["interest"] = selected_interest
