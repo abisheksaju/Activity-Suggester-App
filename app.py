@@ -862,121 +862,121 @@ def render_quick_glance_view():
     ...
 
    
-       # Display all slots in a grid
-       num_cols = 2  # Display 2 slots per row
-       
-       # Group slots by day
-       saturday_slots = [slot for slot in st.session_state.weekend_slots if slot["day"] == "Saturday"]
-       sunday_slots = [slot for slot in st.session_state.weekend_slots if slot["day"] == "Sunday"]
-       
-       # Display Saturday slots
-       if saturday_slots:
-           st.subheader("Saturday")
-           rows = (len(saturday_slots) + num_cols - 1) // num_cols  # Ceiling division
-           
-           for row in range(rows):
-               cols = st.columns(num_cols)
-               for col_idx in range(num_cols):
-                   slot_idx = row * num_cols + col_idx
-                   if slot_idx < len(saturday_slots):
-                       slot = saturday_slots[slot_idx]
-                       slot_id = slot["id"]
-                       
-                       with cols[col_idx]:
-                           # Get the recommendation for this slot
-                           if slot_id in st.session_state.booked_slots:
-                               recommendation = st.session_state.booked_slots[slot_id]
-                               is_booked = True
-                           elif slot_id in st.session_state.slot_recommendations:
-                               recommendation = st.session_state.slot_recommendations[slot_id]
-                               is_booked = False
-                           else:
-                               continue  # Skip if no recommendation (shouldn't happen)
-                           
-                           # Create a card-like UI
-                           st.markdown(f"### {slot['start_time']}-{slot['end_time']}")
-                           if is_booked:
-                               st.success("✅ Booked")
-                           
-                           # Show event tag if it's an event
-                           if recommendation.get("type") == "event":
-                               st.info("🎟️ Event")
-                           elif recommendation.get("type") == "outdoor":
-                               st.info("🌳 Outdoor")
-                           elif recommendation.get("type") == "indoor":
-                               st.info("🏠 Indoor")
-                           
-                           if recommendation.get("image_url"):
-                               st.image(recommendation["image_url"], width=200)
-                           
-                           # Truncate description if too long
-                           description = recommendation["description"]
-                           if len(description) > 100:
-                               description = description[:97] + "..."
-                           st.write(description)
-                           
-                           # Make card clickable
-                           if st.button("View Details", key=f"quickview_{slot_id}"):
-                               st.session_state.selected_slot_id = slot_id
-                               st.session_state.current_view = "slot"
-                               st.rerun()
-       
-       # Display Sunday slots
-       if sunday_slots:
-           st.subheader("Sunday")
-           rows = (len(sunday_slots) + num_cols - 1) // num_cols  # Ceiling division
-           
-           for row in range(rows):
-               cols = st.columns(num_cols)
-               for col_idx in range(num_cols):
-                   slot_idx = row * num_cols + col_idx
-                   if slot_idx < len(sunday_slots):
-                       slot = sunday_slots[slot_idx]
-                       slot_id = slot["id"]
-                       
-                       with cols[col_idx]:
-                           # Get the recommendation for this slot
-                           if slot_id in st.session_state.booked_slots:
-                               recommendation = st.session_state.booked_slots[slot_id]
-                               is_booked = True
-                           elif slot_id in st.session_state.slot_recommendations:
-                               recommendation = st.session_state.slot_recommendations[slot_id]
-                               is_booked = False
-                           else:
-                               continue  # Skip if no recommendation (shouldn't happen)
-                           
-                           # Create a card-like UI
-                           st.markdown(f"### {slot['start_time']}-{slot['end_time']}")
-                           if is_booked:
-                               st.success("✅ Booked")
-                               
-                           # Show event tag if it's an event
-                           if recommendation.get("type") == "event":
-                               st.info("🎟️ Event")
-                           elif recommendation.get("type") == "outdoor":
-                               st.info("🌳 Outdoor")
-                           elif recommendation.get("type") == "indoor":
-                               st.info("🏠 Indoor")
-                           
-                           if recommendation.get("image_url"):
-                               st.image(recommendation["image_url"], width=200)
-                           
-                           # Truncate description if too long
-                           description = recommendation["description"]
-                           if len(description) > 100:
-                               description = description[:97] + "..."
-                           st.write(description)
-                           
-                           # Make card clickable
-                           if st.button("View Details", key=f"quickview_{slot_id}"):
-                               st.session_state.selected_slot_id = slot_id
-                               st.session_state.current_view = "slot"
-                               st.rerun()
+   # Display all slots in a grid
+   num_cols = 2  # Display 2 slots per row
    
-   # Back to main view button
-   if st.button("← Back to main view", key="back_from_quickglance"):
-       st.session_state.current_view = "main"
-       st.rerun()
+   # Group slots by day
+   saturday_slots = [slot for slot in st.session_state.weekend_slots if slot["day"] == "Saturday"]
+   sunday_slots = [slot for slot in st.session_state.weekend_slots if slot["day"] == "Sunday"]
+   
+   # Display Saturday slots
+   if saturday_slots:
+       st.subheader("Saturday")
+       rows = (len(saturday_slots) + num_cols - 1) // num_cols  # Ceiling division
+       
+       for row in range(rows):
+           cols = st.columns(num_cols)
+           for col_idx in range(num_cols):
+               slot_idx = row * num_cols + col_idx
+               if slot_idx < len(saturday_slots):
+                   slot = saturday_slots[slot_idx]
+                   slot_id = slot["id"]
+                   
+                   with cols[col_idx]:
+                       # Get the recommendation for this slot
+                       if slot_id in st.session_state.booked_slots:
+                           recommendation = st.session_state.booked_slots[slot_id]
+                           is_booked = True
+                       elif slot_id in st.session_state.slot_recommendations:
+                           recommendation = st.session_state.slot_recommendations[slot_id]
+                           is_booked = False
+                       else:
+                           continue  # Skip if no recommendation (shouldn't happen)
+                       
+                       # Create a card-like UI
+                       st.markdown(f"### {slot['start_time']}-{slot['end_time']}")
+                       if is_booked:
+                           st.success("✅ Booked")
+                       
+                       # Show event tag if it's an event
+                       if recommendation.get("type") == "event":
+                           st.info("🎟️ Event")
+                       elif recommendation.get("type") == "outdoor":
+                           st.info("🌳 Outdoor")
+                       elif recommendation.get("type") == "indoor":
+                           st.info("🏠 Indoor")
+                       
+                       if recommendation.get("image_url"):
+                           st.image(recommendation["image_url"], width=200)
+                       
+                       # Truncate description if too long
+                       description = recommendation["description"]
+                       if len(description) > 100:
+                           description = description[:97] + "..."
+                       st.write(description)
+                       
+                       # Make card clickable
+                       if st.button("View Details", key=f"quickview_{slot_id}"):
+                           st.session_state.selected_slot_id = slot_id
+                           st.session_state.current_view = "slot"
+                           st.rerun()
+   
+   # Display Sunday slots
+   if sunday_slots:
+       st.subheader("Sunday")
+       rows = (len(sunday_slots) + num_cols - 1) // num_cols  # Ceiling division
+       
+       for row in range(rows):
+           cols = st.columns(num_cols)
+           for col_idx in range(num_cols):
+               slot_idx = row * num_cols + col_idx
+               if slot_idx < len(sunday_slots):
+                   slot = sunday_slots[slot_idx]
+                   slot_id = slot["id"]
+                   
+                   with cols[col_idx]:
+                       # Get the recommendation for this slot
+                       if slot_id in st.session_state.booked_slots:
+                           recommendation = st.session_state.booked_slots[slot_id]
+                           is_booked = True
+                       elif slot_id in st.session_state.slot_recommendations:
+                           recommendation = st.session_state.slot_recommendations[slot_id]
+                           is_booked = False
+                       else:
+                           continue  # Skip if no recommendation (shouldn't happen)
+                       
+                       # Create a card-like UI
+                       st.markdown(f"### {slot['start_time']}-{slot['end_time']}")
+                       if is_booked:
+                           st.success("✅ Booked")
+                           
+                       # Show event tag if it's an event
+                       if recommendation.get("type") == "event":
+                           st.info("🎟️ Event")
+                       elif recommendation.get("type") == "outdoor":
+                           st.info("🌳 Outdoor")
+                       elif recommendation.get("type") == "indoor":
+                           st.info("🏠 Indoor")
+                       
+                       if recommendation.get("image_url"):
+                           st.image(recommendation["image_url"], width=200)
+                       
+                       # Truncate description if too long
+                       description = recommendation["description"]
+                       if len(description) > 100:
+                           description = description[:97] + "..."
+                       st.write(description)
+                       
+                       # Make card clickable
+                       if st.button("View Details", key=f"quickview_{slot_id}"):
+                           st.session_state.selected_slot_id = slot_id
+                           st.session_state.current_view = "slot"
+                           st.rerun()
+
+# Back to main view button
+if st.button("← Back to main view", key="back_from_quickglance"):
+   st.session_state.current_view = "main"
+   st.rerun()
 
 
 # View Management
