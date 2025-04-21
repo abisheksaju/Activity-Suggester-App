@@ -709,7 +709,7 @@ def render_quick_glance_view():
    # Create or retrieve the diversity plan
    if "diversity_plan" not in st.session_state:
        # Generate a new diversity plan for all slots
-       st.session_state.diversity_plan = plan_diverse_activities(st.session_state.weekend_slots)
+       st.session_state.diversity_plan = plan_diverse_activities(st.session_state.weekend_slots, user)
        add_debug_log(f"Diversity plan created: {st.session_state.diversity_plan}")
    
    # Ensure all slots have recommendations based on the diversity plan
