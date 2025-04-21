@@ -2174,15 +2174,18 @@ def plan_diverse_activities(weekend_slots: List[Dict], user: Dict):
         
         # For outdoor, favor travel-related interests if available
         # For outdoor, favor travel-related interests if available
-        if activity_type == "outdoor" and "travel" in top_3_interests:
-            selected_interest = "travel"
-
-        elif activity_type == "outdoor" and "event" in top_3_interests:
-              selected_interest = "event"
-        elif activity_type == "outdoor" and "music" in top_3_interests:
-              selected_interest = "music"  
+        if activity_type == "outdoor":
+            if "event" in top_3_interests and random.random() < 0.5:  # Give "event" a 50% chance when present
+                selected_interest = "event"
+            elif "travel" in top_3_interests:
+                selected_interest = "travel"
+            elif "music" in top_3_interests:
+                selected_interest = "music"
+            else:
+                # Otherwise select from our biased pool of top 3
+                selected_interest = random.choice(biased_interest_pool)
         else:
-            # Otherwise select from our biased pool of top 3
+            # Handle non-outdoor activities
             selected_interest = random.choice(biased_interest_pool)
 
         diversity_plan[slot_id]["interest"] = selected_interest
