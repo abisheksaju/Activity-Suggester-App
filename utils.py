@@ -527,9 +527,9 @@ def get_synthetic_user():
         "gender": "man",
         "age_group" : "20-30",
         "location": {
-            "city": "New York",
-            "lat":  40.7128,
-            "lon": -74.0060
+            "city": "Chicago",
+            "lat":  41.8781,
+            "lon": -87.6298
         },
         "weather": "Clear",
         "current_time": "Saturday 7 AM",
@@ -1372,8 +1372,8 @@ def get_user_preferences_db():
             "category_preferences": {
                 "food": 0.2,
                 "travel": 0.8,
-                "event": 0.5,
-                "music": 0.5,
+                "event": 0.9,
+                "music": 0.6,
                 "gaming": 0.2,
                 "news": 0.2,
                 "fitness": 0.3,
