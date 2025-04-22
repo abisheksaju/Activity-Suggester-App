@@ -336,6 +336,12 @@ def format_event(event: Dict, source: str) -> Dict:
     if source == "ticketmaster":
         formatted.update({
             "id": event.get("id", ""),
+            if event_id:
+                # Construct proper Ticketmaster URL
+                country = event.get('_embedded', {}).get('venues', [{}])[0].get('country', {}).get('countryCode', 'US').lower()
+                formatted["event_url"] = f"https://www.ticketmaster.{country}/event/{event_id}"
+            else:
+                formatted["event_url"] = "#",
             "title": event.get("name", "No title"),
             "date": event.get("dates", {}).get("start", {}).get("localDate", "Date not specified"),
             "time": event.get("dates", {}).get("start", {}).get("localTime", ""),
