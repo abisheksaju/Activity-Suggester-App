@@ -763,7 +763,7 @@ def render_quick_glance_view():
         st.session_state.diversity_plan = plan_diverse_activities(st.session_state.weekend_slots, user)
         add_debug_log(f"Diversity plan created: {st.session_state.diversity_plan}")
 
-    event_related_interests = ["music", "sports", "entertainment", "theatre", "concerts", "festivals", "arts", "food"]
+    event_related_interests = ["music", "sports", "entertainment", "theatre", "concerts", "festivals", "arts", "food","event"]
 
     for slot in st.session_state.weekend_slots:
         slot_id = slot["id"]
