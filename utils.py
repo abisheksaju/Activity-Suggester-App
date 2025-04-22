@@ -527,9 +527,9 @@ def get_synthetic_user():
         "gender": "man",
         "age_group" : "20-30",
         "location": {
-            "city": "Chicago",
-            "lat":  41.8781,
-            "lon": -87.6298
+            "city": "New York",
+            "lat":  40.7128,
+            "lon": -74.0060
         },
         "weather": "Clear",
         "current_time": "Saturday 7 AM",
@@ -1371,9 +1371,9 @@ def get_user_preferences_db():
         st.session_state.user_preferences = {
             "category_preferences": {
                 "food": 0.2,
-                "travel": 0.8,
-                "event": 0.9,
-                "music": 0.6,
+                "travel": 0.9,
+                "event": 0.8,
+                "music": 0.7,
                 "gaming": 0.2,
                 "news": 0.2,
                 "fitness": 0.3,
@@ -2579,21 +2579,21 @@ def show_booking_options(recommendation):
             format_func=lambda x: "Select a platform" if x == "" else x.capitalize(),
             key=f"platform_select_{recommendation.get('name', '')}"
         )
-
+        
         if selected_platform:
             platform_name = selected_platform.capitalize()
             url = booking_urls[selected_platform]
-
+    
             if not is_valid_url(url):
                 st.error(f"Invalid booking URL for {platform_name}")
                 return
-
+    
             # Use Streamlit's native markdown link syntax
             st.markdown(f"""
             ##### {platform_name}
             [Book Now]({url}){{target="_blank"}}
             """, unsafe_allow_html=True)
-
+    
             track_booking_click(platform_name, url)
 
             # For local development
