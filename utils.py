@@ -1362,14 +1362,14 @@ def get_user_preferences_db():
         st.session_state.user_preferences = {
             "category_preferences": {
                 "food": 0.2,
-                "travel": 0.5,
-                "event": 0.5,
+                "travel": 0.9,
+                "event": 0.8,
                 "music": 0.7,
                 "gaming": 0.2,
                 "news": 0.2,
                 "fitness": 0.3,
                 "cooking": 0.2,
-                "shopping": 0.9
+                "shopping": 0.6
             },
             "liked_places": [],
             "disliked_places": []
