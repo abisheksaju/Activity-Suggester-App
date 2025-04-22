@@ -216,7 +216,10 @@ def fetch_eventbrite_events(api_key, interest=None, location=None, start_date=No
         dict: JSON response or None if error.
     """
     url = "https://www.eventbriteapi.com/v3/events/search/"
-    headers = {"Authorization": f"Bearer {api_key}"}
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Accept": "application/json"
+    }
     params = {"expand": "venue"}
 
     # Add category filter if valid
@@ -1362,14 +1365,14 @@ def get_user_preferences_db():
         st.session_state.user_preferences = {
             "category_preferences": {
                 "food": 0.2,
-                "travel": 0.5,
+                "travel": 0.8,
                 "event": 0.5,
-                "music": 0.7,
+                "music": 0.5,
                 "gaming": 0.2,
                 "news": 0.2,
                 "fitness": 0.3,
                 "cooking": 0.2,
-                "shopping": 0.9
+                "shopping": 0.6
             },
             "liked_places": [],
             "disliked_places": []
@@ -2575,45 +2578,16 @@ def show_booking_options(recommendation):
             platform_name = selected_platform.capitalize()
             url = booking_urls[selected_platform]
 
-            # Validate URL
             if not is_valid_url(url):
                 st.error(f"Invalid booking URL for {platform_name}")
                 return
 
-            # Shorten URL for display (keeps original for redirect)
-            display_url = shorten_url(url)
+            # Use Streamlit's native markdown link syntax
+            st.markdown(f"""
+            ##### {platform_name}
+            [Book Now]({url}){{target="_blank"}}
+            """, unsafe_allow_html=True)
 
-            # Mobile-friendly booking button with tracking
-            st.markdown(
-                f"""
-                <div style="width:100%; margin:10px 0">
-                    <a href="{url}" target="_blank"
-                       onclick="console.log('Booking click: {platform_name}');"
-                       style="display:block; width:100%; text-decoration:none">
-                        <button style="
-                            width:100%;
-                            background-color:#FF5A5F;
-                            color:white;
-                            border:none;
-                            padding:12px 24px;
-                            text-align:center;
-                            font-size:16px;
-                            cursor:pointer;
-                            border-radius:4px;
-                            font-weight:bold;
-                        ">
-                            🏨 Book on {platform_name}
-                        </button>
-                    </a>
-                    <small style="color:#666; display:block; text-align:center; margin-top:4px">
-                        {display_url}
-                    </small>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-
-            # Track the click (server-side)
             track_booking_click(platform_name, url)
 
             # For local development
