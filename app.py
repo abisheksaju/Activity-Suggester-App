@@ -367,7 +367,6 @@ def render_main_view():
                 "type": recommendation.get("activity_type", "Unknown")
             }
             update_preferences_from_feedback("like", item_data)
-            st.balloons()
             st.success("Great! I'll remember you liked this!")
 
     with col2:
